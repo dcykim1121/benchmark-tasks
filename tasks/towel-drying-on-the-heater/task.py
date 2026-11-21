@@ -135,7 +135,7 @@ PY = math.radians(30.0)              # the switch hand points to the left (+y), 
 AY = np.array([0.0, math.cos(PY), -math.sin(PY)])
 RY = np.column_stack([np.array([1.0, 0.0, 0.0]), np.cross(AY, np.array([1.0, 0.0, 0.0])), AY])
 GRASP = np.array([K.TW_POS[0], K.TW_POS[1], K.TOP + K.H_TOP + 0.014])
-PUT = np.array([0.400, 0.480, K.TOP + 0.016])
+PUT = np.array([0.400, 0.460, K.TOP + 0.016])
 TIP = 0.013
 
 

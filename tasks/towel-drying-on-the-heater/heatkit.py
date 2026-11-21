@@ -42,7 +42,8 @@ SW_TRAVEL, SW_K, SW_ON = 0.003, 1500.0, 0.0018
 TAB = (0.060, 0.020, 0.024)          # the pinch (hidden collider): along x, along y, tall
 TW_MASS = 0.05
 TW_POS = (HEATER_C[0], HEATER_C[1], TOP + H_TOP + TAB[2] / 2 + 0.0005)
-CLEAR_M = 0.40                       # the towel is clear of the heater at least this far from its centre
+LAID = (-0.143, 0.146, -0.155, 0.192)  # outline of the towel as it lies on the counter, about its pinch: x0, x1, y0, y1 (from the cloth shape)
+SIDE_M = 0.20                        # no part of the towel may lie nearer than this to the heater's sides or back
 
 
 def _vis(names, offset, **kw):
@@ -87,13 +88,37 @@ def towel_on_heater(towel) -> bool:
     return bool(abs(t[0] - HEATER_C[0]) <= H_LEN / 2 + 0.03 and abs(t[1] - HEATER_C[1]) <= H_DEEP / 2 + 0.03 and t[2] > TOP + 0.20)
 
 
+def _yaw(pose) -> float:
+    x, y, z, w = (float(v) for v in np.asarray(pose, float)[3:7])
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def towel_outline(towel):
+    """Points round the edge of the towel as it lies on the counter: the outline of its laid-down shape (LAID, about
+    the pinch), turned with the pinch."""
+    t = np.asarray(towel, float)
+    c, s = math.cos(_yaw(t)), math.sin(_yaw(t))
+    x0, x1, y0, y1 = LAID
+    n = 8
+    edge = [(x0 + (x1 - x0) * i / n, y) for i in range(n + 1) for y in (y0, y1)] + [(x, y0 + (y1 - y0) * i / n) for i in range(n + 1) for x in (x0, x1)]
+    return np.array([(t[0] + c * x - s * y, t[1] + s * x + c * y) for x, y in edge])
+
+
+def towel_gap(towel) -> float:
+    """Shortest distance (m) from any part of the laid-down towel to the heater's body."""
+    pts = towel_outline(towel)
+    dx = np.maximum(np.abs(pts[:, 0] - HEATER_C[0]) - H_LEN / 2, 0.0)
+    dy = np.maximum(np.abs(pts[:, 1] - HEATER_C[1]) - H_DEEP / 2, 0.0)
+    return float(np.min(np.hypot(dx, dy)))
+
+
 def towel_in_front(towel) -> bool:
-    """The towel's pinch is on the mesh side of the heater: beyond the plane of its mesh guard (which faces -y)."""
-    return bool(float(np.asarray(towel, float)[1]) < HEATER_C[1] - H_DEEP / 2)
+    """Any part of the laid-down towel is on the mesh side of the heater: beyond the plane of its mesh guard (-y)."""
+    return bool(float(np.min(towel_outline(towel)[:, 1])) < HEATER_C[1] - H_DEEP / 2)
 
 
 def towel_clear(towel) -> bool:
-    """The towel is down on the counter (or off it), its pinch at least CLEAR_M from the heater's centre and not
-    in front of the mesh guard, where the elements radiate."""
+    """The whole towel is clear: lying on the counter, no part of it in front of the mesh guard (where the elements
+    radiate), and no part of it nearer than SIDE_M to the heater's body."""
     t = np.asarray(towel, float)
-    return bool(math.hypot(t[0] - HEATER_C[0], t[1] - HEATER_C[1]) >= CLEAR_M and t[2] < TOP + 0.05 and not towel_in_front(t))
+    return bool(t[2] < TOP + 0.05 and not towel_in_front(t) and towel_gap(t) >= SIDE_M)
