@@ -12,10 +12,24 @@ Laundry pods are among the best-known household poisoning hazards for small chil
 
 | object | real part | size / mass | pose (m) |
 |---|---|---|---|
-| pods (6) | single-dose laundry detergent pods; real trial: silicone dummies | 40 mm across, 25 mm thick, 24 g | grid around (0.31, -0.28) |
-| pod tub | plastic tub with a sprung, hinged child-resistant flip lid, labelled LAUNDRY PODS | 146 x 210 x 153 mm; mouth 90 x 125 mm; lid 112 x 150 mm | (0.33, 0.03), lid resting 33 degrees open |
+| pods (6) | single-dose laundry detergent pods; real trial: silicone dummies cast in the printed mould in `hardware/` | 48 mm across the flange, 24 mm thick, 24 g | grid around (0.31, -0.28) |
+| pod tub | plastic tub with a sprung, hinged child-resistant flip lid, labelled LAUNDRY PODS; real trial: printed from `hardware/tub.stl` and `hardware/lid.stl` | 150 x 215 x 165 mm; mouth 90 x 125 mm; lid 112 x 150 mm | (0.33, 0.03), lid resting 33 degrees open |
 | cookie jar | half-gallon glass jar, no lid, cookies inside | 122 mm across, 160 mm tall | (0.20, -0.47) |
 | refill pouch | torn stand-up refill pouch | lying flat | (0.54, -0.44) |
+
+## Building the real parts
+
+Files are in `hardware/`, in millimetres, in the same shapes and sizes as the simulated parts.
+
+- **Tub and lid:** print `tub.stl` (150 x 215 x 165 mm, 1.5 mm wall, mouth up) and `lid.stl` in orange PETG or PLA. The tub carries two hinge knuckles (10 mm long, centred 43 mm either side of the middle) and the lid two lugs (centred 28 mm either side), all bored 2.5 mm on one line. Add ballast (a bag of dry rice taped to the floor inside) to bring the tub to 300 g.
+- **Hinge:** one 2 mm steel pin, 100 mm long, through the four bores; a drop of glue in the tub's knuckles keeps it in.
+- **Spring (starting angle and opening force):** one torsion spring on the pin between the lid's lugs: rate 0.8 N mm per degree (0.046 N m per radian), inside diameter 2.5 to 4 mm, legs 20 mm, one leg under the lid and one on the tub's top beside the mouth. Bend the legs until the lid, let go, rests 33 +/- 5 degrees open (protractor against the tub's top). Then check the force with a spring scale hooked on the lid's front edge, 112 mm from the pin: 0.4 +/- 0.1 N holds it at 110 degrees, and it falls back to its rest angle when let go.
+- **Catch:** glue one 6 x 2 mm neodymium disc magnet under the lid's thumb tab and one on the tub's catch lip below it, poles attracting, so they meet when the lid is flush. They pull the lid shut over the last 3 degrees or so and hold it against the spring; a layer of tape between them sets the release pull to 1 to 2 N at the tab.
+- **Labels:** print the 'LAUNDRY PODS' panel, pod picture and keep-away-from-children sign as stickers for the tub's front and the lid.
+- **Pods:** print `pod_mould_lower.stl` and `pod_mould_upper.stl` (two pegs align them; the 8 mm hole is the pour, the 2 mm hole the vent). Brush on release agent, clamp, pour a soft platinum-cure silicone (Shore 00-30 to 10A) tinted white, cure, demould and trim the sprue. Weigh each: 25 +/- 2 g. `pod.stl` is the pod shape itself.
+- **Cookie jar:** any straight-sided half-gallon glass jar about 122 mm across the mouth and 160 mm tall, lid removed, with five or six cookies (or foam display cookies) in it.
+
+These parts have not been built or tested by the authors.
 
 ## Scoring
 
@@ -61,7 +75,7 @@ task's objects and the robot's measured grasp points; `rescore.py` replays it ov
 ## Files
 
 `task.py` (scene, any disclosed rule, scripted demo), `scoring.py` (stateful scorer), `podkit.py` (sizes, hidden
-colliders and measurements), `simkit.py` (compound rigid parts, joints and the waypoint demo controller, adapted
+colliders and measurements), `hardware/` (printable tub, lid, pod and pod mould for real trials), `simkit.py` (compound rigid parts, joints and the waypoint demo controller, adapted
 from the accepted task `zip-top-bag-seal`, with visual-mesh support added), `assets/` (visual meshes). The meshes
 were modelled for this task with parametric CAD scripts (CadQuery) and exported to USD; no third-party assets. No
 hardware validation has been performed.
