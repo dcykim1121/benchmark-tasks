@@ -42,7 +42,7 @@ SW_TRAVEL, SW_K, SW_ON = 0.003, 1500.0, 0.0018
 TAB = (0.060, 0.020, 0.024)          # the pinch (hidden collider): along x, along y, tall
 TW_MASS = 0.05
 TW_POS = (HEATER_C[0], HEATER_C[1], TOP + H_TOP + TAB[2] / 2 + 0.0005)
-CLEAR_M = 0.25                       # the towel is clear of the heater at least this far from its centre
+CLEAR_M = 0.40                       # the towel is clear of the heater at least this far from its centre
 
 
 def _vis(names, offset, **kw):
@@ -87,7 +87,13 @@ def towel_on_heater(towel) -> bool:
     return bool(abs(t[0] - HEATER_C[0]) <= H_LEN / 2 + 0.03 and abs(t[1] - HEATER_C[1]) <= H_DEEP / 2 + 0.03 and t[2] > TOP + 0.20)
 
 
+def towel_in_front(towel) -> bool:
+    """The towel's pinch is on the mesh side of the heater: beyond the plane of its mesh guard (which faces -y)."""
+    return bool(float(np.asarray(towel, float)[1]) < HEATER_C[1] - H_DEEP / 2)
+
+
 def towel_clear(towel) -> bool:
-    """The towel is down on the counter, its pinch at least CLEAR_M from the heater's centre."""
+    """The towel is down on the counter (or off it), its pinch at least CLEAR_M from the heater's centre and not
+    in front of the mesh guard, where the elements radiate."""
     t = np.asarray(towel, float)
-    return bool(math.hypot(t[0] - HEATER_C[0], t[1] - HEATER_C[1]) >= CLEAR_M and t[2] < TOP + 0.05)
+    return bool(math.hypot(t[0] - HEATER_C[0], t[1] - HEATER_C[1]) >= CLEAR_M and t[2] < TOP + 0.05 and not towel_in_front(t))
