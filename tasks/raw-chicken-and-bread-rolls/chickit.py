@@ -165,10 +165,30 @@ def foods_touch(chicken, bun) -> bool:
 
 
 def grip_on_bread_surface(tcp) -> bool:
-    """A gripper's grasp point down on the plate or down inside the bread basket (where the bread is or goes)."""
+    """A gripper's grasp point down at the plate, or down inside the bread basket (anywhere below its rim): the
+    surfaces the bread lies on or is served from."""
     p = np.asarray(tcp, float)
-    on_plate_surface = math.hypot(p[0] - PLATE_C[0], p[1] - PLATE_C[1]) <= PLATE_R and p[2] <= TOP + PLATE_SURF + 0.012
-    in_basket_low = (abs(p[0] - BASKET_C[0]) <= BASKET_IN[0] and abs(p[1] - BASKET_C[1]) <= BASKET_IN[1]
-                     and p[2] <= TOP + BASKET_FLOOR + 0.012)
-    return bool(on_plate_surface or in_basket_low)
+    at_plate = math.hypot(p[0] - PLATE_C[0], p[1] - PLATE_C[1]) <= PLATE_R + 0.010 and p[2] <= TOP + PLATE_SURF + 0.020
+    in_basket_low = (abs(p[0] - BASKET_C[0]) <= BASKET_IN[0] + 0.012 and abs(p[1] - BASKET_C[1]) <= BASKET_IN[1] + 0.012
+                     and p[2] <= TOP + BASKET_RIM)
+    return bool(at_plate or in_basket_low)
 
+
+def grip_in_tray(tcp) -> bool:
+    """A gripper's grasp point down inside the raw-meat tray (within its outline, at or below 1 cm over its rim):
+    the tray's inside is wet with raw juices whether or not a fillet is still in it."""
+    p = np.asarray(tcp, float)
+    return bool(abs(p[0] - TRAY_C[0]) <= TRAY[0] / 2 and abs(p[1] - TRAY_C[1]) <= TRAY[1] / 2 and p[2] <= TOP + TRAY[2] + 0.010)
+
+
+def grip_in_pan(tcp) -> bool:
+    """A gripper's grasp point down inside the grill pan, below its rim."""
+    p = np.asarray(tcp, float)
+    return bool(abs(p[0] - PAN_C[0]) <= PAN_IN + 0.004 and abs(p[1] - PAN_C[1]) <= PAN_IN + 0.004 and p[2] <= TOP + PAN_RIM)
+
+
+HANDS_TOUCH = 0.080                  # two grasp points this close: the grippers (each about 9 cm wide) are touching
+
+
+def hands_touch(tcp_a, tcp_b) -> bool:
+    return bool(np.linalg.norm(np.asarray(tcp_a, float)[:3] - np.asarray(tcp_b, float)[:3]) <= HANDS_TOUCH)
