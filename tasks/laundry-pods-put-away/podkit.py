@@ -179,9 +179,9 @@ def lid_open_deg(tub, lid) -> float:
 
 
 def in_jar(p) -> bool:
-    """A pod's centre inside the jar: within its inside radius and below its rim."""
+    """A pod's centre inside the jar, or lying on what is in it: within the jar's inside radius, up to 3 cm above its rim."""
     p = np.asarray(p, float)
-    return bool(math.hypot(p[0] - JAR_C[0], p[1] - JAR_C[1]) <= JAR_R + 0.004 and p[2] <= TOP + JAR_H)
+    return bool(math.hypot(p[0] - JAR_C[0], p[1] - JAR_C[1]) <= JAR_R + 0.004 and p[2] <= TOP + JAR_H + 0.030)
 
 
 def in_tub(tub, p) -> bool:
