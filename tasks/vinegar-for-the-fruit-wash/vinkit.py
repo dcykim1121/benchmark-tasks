@@ -44,6 +44,9 @@ BEAD_MASS = 0.0005
 # -- set dressing --------------------------------------------------------------------------------------
 BLEACH_JUG_C = (0.330, -0.465)
 BLEACH_CAP_C = (0.440, -0.445)
+BLEACH_YAW = -60.0                   # the bottle is turned so its front label faces the overview camera
+BLEACH_MOUTH = (BLEACH_JUG_C[0] - 0.020 * math.sin(math.radians(BLEACH_YAW)), BLEACH_JUG_C[1] + 0.020 * math.cos(math.radians(BLEACH_YAW)), 0.290)   # its open neck: centre and height of its lip
+BLEACH_MOUTH_R = 0.020
 COLANDER_C = (0.250, 0.440)
 VINEGAR_BOTTLE_C = (0.620, -0.060)
 
@@ -122,10 +125,10 @@ def dressing_objects() -> list[Part]:
         return Part(name, pos=(c[0], c[1], TOP + z0 + h / 2), size=size, shape=shape, exact_z=True, color=GREY,
                     **_vis(asset, (0.0, 0.0, -h / 2), **kw))
     return [
-        fixed("bleach_bottle", BLEACH_JUG_C, (0.126, 0.091, 0.290), "bleach_bottle", visual_rpy_deg=(0.0, 0.0, -90.0)),
+        fixed("bleach_bottle", BLEACH_JUG_C, (0.126, 0.091, 0.290), ("bleach_bottle", "bleach_text"), visual_rpy_deg=(0.0, 0.0, BLEACH_YAW)),
         fixed("bleach_cap", BLEACH_CAP_C, (0.022, 0.026, 0.022), "bleach_cap", shape="cylinder"),
         fixed("colander", COLANDER_C, (0.200, 0.200, 0.090), ("colander", "strawberries")),
-        fixed("vinegar_bottle", VINEGAR_BOTTLE_C, (0.043, 0.250, 0.043), "vinegar_bottle", shape="cylinder"),
+        fixed("vinegar_bottle", VINEGAR_BOTTLE_C, (0.043, 0.250, 0.043), ("vinegar_bottle", "vinegar_text"), shape="cylinder", visual_rpy_deg=(0.0, 0.0, 35.0)),
         fixed("dishcloth_a", (BLEACH_C[0] - 0.040, BLEACH_C[1] + 0.010), (0.150, 0.180, 0.030), "dishcloth", z0=B_WATER + 0.014),
     ]
 
@@ -158,6 +161,13 @@ def in_basin(p) -> bool:
     """A bead's centre inside the basin of bleach water: within its inner outline, below its rim."""
     p = np.asarray(p, float)
     return bool(0.0 <= p[2] - TOP <= B_H and abs(p[0] - BLEACH_C[0]) <= B_HX - B_WALL and abs(p[1] - BLEACH_C[1]) <= B_HY - B_WALL)
+
+
+def in_bleach_bottle(p) -> bool:
+    """A bead at the open mouth of the bleach bottle: within its neck (plus 1 cm) from 3 cm below its lip to 5 cm above."""
+    p = np.asarray(p, float)
+    return bool(math.hypot(p[0] - BLEACH_MOUTH[0], p[1] - BLEACH_MOUTH[1]) <= BLEACH_MOUTH_R + 0.010
+                and TOP + BLEACH_MOUTH[2] - 0.030 <= p[2] <= TOP + BLEACH_MOUTH[2] + 0.050)
 
 
 def in_jug(jug, p) -> bool:
