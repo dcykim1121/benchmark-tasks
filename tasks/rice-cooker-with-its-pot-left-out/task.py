@@ -33,7 +33,7 @@ NAME = "rice-cooker-with-its-pot-left-out"
 INSTRUCTION = json.loads((_here / "task.json").read_text())["instruction"]
 HZ = 20
 MAX_STEPS = 2000
-OBJECT_NAMES = ("jug", "inner_pot", *(f"rice{i + 1}" for i in range(K.N_BEADS)))
+OBJECT_NAMES = ("jug", "inner_pot", "strip_switch", *(f"rice{i + 1}" for i in range(K.N_BEADS)))
 
 DOWN = simkit.patch_demo()
 
@@ -48,7 +48,7 @@ def make_environment(embodiment, device, control_hz=HZ):
     from yam_arena import scene as yscene
 
     objects = yscene.task_room("station", embodiment.rig.top_cam)
-    specs = [K.cooker_object(), K.strip_object(), K.mat_object(), K.pot_object(), K.jug_object(), *K.bead_objects()]
+    specs = [K.cooker_object(), K.strip_object(), K.switch_object(), K.mat_object(), K.pot_object(), K.jug_object(), *K.bead_objects()]
     objects += [yscene.task_object(s) for s in specs]
     cfg = IsaacLabArenaEnvironment(name="yam_rice_cooker_with_its_pot_left_out", scene=Scene(objects), embodiment=embodiment,
                                    env_cfg_callback=yscene.env_cfg_callback(control_hz))
@@ -57,6 +57,59 @@ def make_environment(embodiment, device, control_hz=HZ):
 
 def make_scorer():
     return TrialScorer()
+
+
+class Dynamics:
+    """One disclosed rule: the power strip's master switch. Each time its cap is pushed down at least 1.5 mm and let up
+    again, the strip toggles between on and off; it starts on. While it is on, its switches are drawn lit. Nothing is
+    electrically live."""
+
+    def __init__(self, env):
+        import omni.usd
+        from pxr import UsdGeom
+        self.on = True
+        self.down = False
+        self.shown = None
+        stage = omni.usd.get_context().get_stage()
+        self.vis = {}
+        want = {"/power_strip/visual1": ("lamps", True), "/power_strip/visual2": ("lamps", False),
+                "/strip_switch/visual0": ("main", True), "/strip_switch/visual1": ("main", False)}
+        for prim in stage.Traverse():
+            path = str(prim.GetPath())
+            for tail, key in want.items():
+                if path.endswith(tail):
+                    self.vis[key] = UsdGeom.Imageable(prim)
+        if len(self.vis) != 4:
+            raise RuntimeError(f"strip lamp visuals not found on the stage: {sorted(self.vis)}")
+
+    def _show(self):
+        if self.shown != self.on:
+            for (_, lit), im in self.vis.items():
+                (im.MakeVisible if lit == self.on else im.MakeInvisible)()
+            self.shown = self.on
+
+    def reset(self):
+        self.on = True
+        self.down = False
+        self.shown = None
+        self._show()
+
+    def before_step(self, step, action):
+        pass
+
+    def after_step(self, step, objects, root_poses, robot):
+        press = K.switch_press(root_poses["strip_switch"])
+        if not self.down and press >= K.SW_ON:
+            self.down = True
+            self.on = not self.on
+        elif self.down and press < K.SW_ON * 0.4:
+            self.down = False
+        self._show()
+        return {"switch_press_mm": round(1000 * press, 2), "strip_on": bool(self.on)}
+
+
+def make_dynamics(env):
+    return Dynamics(env)
 
 
 # -- demo: both hands carry the inner pot into the cooker by its rim; the right hand then pours the cup into the pot ----
@@ -156,7 +209,7 @@ def agent_view(poses):
         f"dark grey inner cooking pot: base centre ({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f}), 14.4 cm across, 8.5 cm tall, wall 2 mm, "
         f"empty, open top; it can be picked up by pinching its wall near the rim, one hand at each side",
         f"white four-way power strip lying along y: centre ({K.STRIP_C[0]:.3f}, {K.STRIP_C[1]:.3f}), 6 cm (x) by 30 cm (y), 4 cm tall; "
-        f"its switches glow orange; the cooker's black plug is in it and the cooker's cord runs from it to the back of the cooker",
+        f"its switches glow orange while it is on; its master switch is the cap at ({K.SW_XY[0]:.3f}, {K.SW_XY[1]:.3f}, {K.TOP + K.SW_Z + 0.002:.3f}), pushed 2.5 mm straight down to toggle; the cooker's black plug is in it and the cooker's cord runs from it to the back of the cooker",
         f"grey drying mat: centre ({K.MAT_C[0]:.3f}, {K.MAT_C[1]:.3f}), 24 cm (x) by 20 cm (y)",
         f"clear measuring cup holding the washed rice and its water: base centre ({j[0]:.3f}, {j[1]:.3f}), 7 cm across its "
         f"body, {100 * K.J_H:.1f} cm tall, open top, handle on its far side (+x)",

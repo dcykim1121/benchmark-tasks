@@ -21,7 +21,7 @@ class TrialScorer:
         self.unsafe = False
         self.worst = 0
 
-    def update(self, step, objects, root_poses, robot, **_):
+    def update(self, step, objects, root_poses, robot, mechanics=None, **_):
         if step != self.step + 1:
             raise ValueError("scorer needs one update per control step")
         self.step = step
@@ -48,5 +48,5 @@ class TrialScorer:
         in_cavity = sum(K.in_cooker_body(p) for p in out)
         return {"score": float(score), "success": bool(score == 1.0), "rice_in_pot": int(n_pot), "rice_in_cooker_body": int(n_body),
                 "most_rice_in_cooker_body": int(self.worst), "rice_on_cooker_top": int(n_deck), "rice_on_power_strip": int(n_strip), "left_in_cup": int(K.N_BEADS - len(out)),
-                "pot_in_cooker": bool(seated), "rice_in_body_or_on_strip": bool(self.unsafe), "cup_set_down": bool(jug_down),
+                "pot_in_cooker": bool(seated), "rice_in_body_or_on_strip": bool(self.unsafe), "cup_set_down": bool(jug_down), "strip_on": bool((mechanics or {}).get("strip_on", True)),
                 "task_done": 1.0 if in_cavity >= ENOUGH else 0.0, "held_frames": self.held, "dropped": False, "clear": True}

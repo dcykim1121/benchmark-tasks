@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from simkit import Part, Piece
+from simkit import Part, Piece, Spring
 
 TOP = 0.7475
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -55,6 +55,12 @@ BEAD_MASS = 0.0005
 # -- power strip (62 x 300 x 40 mm) the cooker is plugged into, lying along y behind the cup; fixed -------------
 STRIP_C = (0.660, -0.160)
 STRIP = (0.062, 0.300, 0.040)
+STRIP_BOX_H = 0.036                  # the strip's collider stops 4 mm short of its top, so its master switch has room to travel
+# its master rocker switch, at the end away from the cooker: a cap 22 x 18 mm standing 2.5 mm proud, pressed 2.5 mm down
+SW_XY = (STRIP_C[0], STRIP_C[1] - 0.125)
+SW_SIZE = (0.022, 0.018, 0.004)
+SW_Z = 0.0405                        # the cap's centre above the counter
+SW_TRAVEL, SW_K, SW_ON = 0.0025, 600.0, 0.0015
 
 
 def _vis(names, offset, **kw):
@@ -88,7 +94,7 @@ def cooker_object() -> Part:
     back = BODY_X[1] - 0.095
     pieces.append(Piece("box", (back, 2 * BODY_HALF_Y, DECK_Z), (0.095 + back / 2, 0.0, DECK_Z / 2 - zc), color=WHITE))
     pieces.append(Piece("box", (0.045, 0.210, 0.210), (0.166, 0.0, DECK_Z + 0.103 - zc), rot=(0.0, math.radians(10.0), 0.0), color=WHITE))
-    kw = _vis("rice_cooker", (0.0, 0.0, -zc), visual_hide=("cord",))
+    kw = _vis(("rice_cooker", "cooker_labels"), (0.0, 0.0, -zc), visual_hide=("cord",))
     return Part("rice_cooker", pos=(COOK_C[0], COOK_C[1], TOP + zc), size=(CAV_R - 0.001, PLATE_Z, CAV_R - 0.001), shape="cylinder",
                 exact_z=True, color=WHITE, friction=(0.3, 0.25), pieces=tuple(pieces), **kw)
 
@@ -101,11 +107,21 @@ def mat_object() -> Part:
 
 def strip_object() -> Part:
     """The power strip with the cooker's plug in it and the cooker's cord: fixed. Colliders (hidden): the strip and the
-    plug as boxes; the cords are drawn only."""
-    zc = STRIP[2] / 2
-    pieces = (Piece("box", (0.038, 0.038, 0.022), (0.006, 0.015, zc + 0.011), color=WHITE),)
-    return Part("power_strip", pos=(STRIP_C[0], STRIP_C[1], TOP + zc), size=STRIP, exact_z=True, color=WHITE,
-                friction=(0.5, 0.4), pieces=pieces, **_vis("power_set", (0.0, 0.0, -zc)))
+    plug as boxes; the cords are drawn only. Its socket switches are drawn lit or unlit by the task."""
+    zc = STRIP_BOX_H / 2
+    pieces = (Piece("box", (0.038, 0.038, 0.026), (0.006, -0.015, zc + 0.013), color=WHITE),)
+    return Part("power_strip", pos=(STRIP_C[0], STRIP_C[1], TOP + zc), size=(STRIP[0], STRIP[1], STRIP_BOX_H), exact_z=True, color=WHITE,
+                friction=(0.5, 0.4), pieces=pieces,
+                **_vis(("power_set", "strip_lamps_on", "strip_lamps_off"), (0.0, 0.0, -zc),
+                       visual_hide=("switch_1", "switch_2", "switch_3", "switch_4", "switch_main")))
+
+
+def switch_object() -> Part:
+    """The strip's master switch: a sprung cap that is pushed straight down."""
+    spring = Spring(axis="Z", lower=-SW_TRAVEL, upper=0.0, stiffness=SW_K, damping=6.0, target=0.0)
+    return Part("strip_switch", pos=(SW_XY[0], SW_XY[1], TOP + SW_Z), size=SW_SIZE, exact_z=True, mass=0.003,
+                color=(1.0, 0.45, 0.04), friction=(0.8, 0.7), spring=spring, contact_offset=0.001,
+                **_vis(("strip_main_on", "strip_main_off"), (STRIP_C[0] - SW_XY[0], STRIP_C[1] - SW_XY[1], -SW_Z)))
 
 
 def pot_object() -> Part:
@@ -186,6 +202,11 @@ def in_cooker_body(p) -> bool:
     """A point inside the cooker's body: within the cavity's outline and below its deck."""
     p = np.asarray(p, float)
     return bool(math.hypot(p[0] - COOK_C[0], p[1] - COOK_C[1]) <= CAV_R + 0.004 and p[2] < TOP + DECK_Z)
+
+
+def switch_press(sw) -> float:
+    """How far the strip's master switch is pushed down (m)."""
+    return float(TOP + SW_Z - np.asarray(sw, float)[2])
 
 
 def strip_distance(p) -> float:
