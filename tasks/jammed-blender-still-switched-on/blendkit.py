@@ -54,6 +54,13 @@ CH_MASS = 0.09
 CH_C = (BL_C[0], BL_C[1], TOP + HUB_TOP_Z + CH_MID)
 FREE_RISE = 0.015                    # raised this far off the hub, the carrot no longer blocks the blades
 GUARD_ABOVE_RIM = 0.120              # the danger zone is the jug's outline up to this far above its rim
+TIP_ON_KNIFE = 0.012                 # the carrot's lower end holds the knife only within this of the jug's axis
+PLACE_DROP = 0.050                   # let go with its lowest surface higher than this above the plate, the carrot was dropped, not placed
+
+# -- the gripper's outline for "a hand at the jug" (in its own frame: z along the fingers, x the closing direction) ----
+PAD_TIP, PAD_THICK, FINGER_LEN = 0.013, 0.010, 0.065   # pad tips beyond the grasp point; pad thickness; finger length behind it
+PALM_BACK, PALM_HALF_X, PALM_HALF_Y = 0.090, 0.050, 0.025   # the palm block behind the fingers
+TCP_BACK = 0.134                     # the wrist (gripper link origin) is this far behind the grasp point
 
 # -- plate (230 mm across, well 150 mm across and 6 mm up) and the jug's lid (116 mm across, 34 mm tall) ----------
 PLATE_C = (0.360, -0.220)
@@ -196,10 +203,11 @@ def jug_distance(p) -> float:
 
 
 def chunk_blocks(pose) -> bool:
-    """The carrot jams the blades: its lower end is inside the jug and less than 15 mm above where it stood on the hub."""
+    """The carrot jams the blades: its lower end is on the knife (within 12 mm of the jug's axis) and less than 15 mm
+    above where it stood on the hub. Raised, pushed off the hub sideways, knocked over or out of the jug, it does not."""
     ends = chunk_points(pose, 2)
     low = min(ends, key=lambda p: p[2])
-    return bool(jug_distance(low) <= JUG_R_IN and low[2] < TOP + HUB_TOP_Z + FREE_RISE)
+    return bool(jug_distance(low) <= TIP_ON_KNIFE and low[2] < TOP + HUB_TOP_Z + FREE_RISE)
 
 
 def in_guard(p) -> bool:
@@ -208,7 +216,9 @@ def in_guard(p) -> bool:
 
 
 def chunk_in_guard(pose) -> bool:
-    return any(in_guard(p) for p in chunk_points(pose))
+    """Any part of the carrot at the jug: points along its axis, widened by its own half thickness."""
+    return any(jug_distance(p) <= JUG_R_OUT + CH_UP_W / 2 and TOP + BASE_H <= float(p[2]) <= TOP + RIM_Z + GUARD_ABOVE_RIM
+               for p in chunk_points(pose, 9))
 
 
 def chunk_in_jug(pose) -> bool:
@@ -225,8 +235,34 @@ def chunk_on_plate(pose) -> bool:
     return bool(inside and chunk_lean_deg(pose) <= 20.0 and low - 0.006 <= pose[2] <= low + 0.022)
 
 
-def hand_on_chunk(pose, tcp) -> bool:
-    """A gripper's grasp point is within 4 cm of the carrot's long axis."""
-    pts = chunk_points(pose, 9)
-    t = np.asarray(tcp, float)[:3]
-    return bool(min(float(np.linalg.norm(t - p)) for p in pts) <= 0.040)
+def gripper_points(arm, side):
+    """Points over the whole gripper, from its measured joints: both finger pads (tips, grasp level, middle, roots,
+    on their outer faces), the palm's four corners, and the wrist (the gripper link's origin, on the arm's last axis).
+    Falls back to the grasp point alone when no joints are given."""
+    tcp = np.asarray(arm["tcp"], float)[:3]
+    if "joints" not in arm:
+        return [tcp]
+    from yam_arena import ik, station
+    pos, rot = ik.tcp_pose(np.asarray(arm["joints"], float), station.BASES[side])
+    half = float(np.mean(np.abs(arm.get("fingers", (0.0, 0.0))))) + PAD_THICK
+    pts = [pos, pos + rot @ np.array([0.0, 0.0, -TCP_BACK])]
+    for sx in (-1.0, 1.0):
+        pts += [pos + rot @ np.array([sx * half, 0.0, z]) for z in (PAD_TIP, 0.0, -0.030, -FINGER_LEN)]
+        pts += [pos + rot @ np.array([sx * PALM_HALF_X, sy * PALM_HALF_Y, -PALM_BACK]) for sy in (-1.0, 1.0)]
+    return pts
+
+
+def gripper_in_guard(arm, side) -> bool:
+    return any(in_guard(p) for p in gripper_points(arm, side))
+
+
+def chunk_low_above_plate(pose) -> float:
+    """Height of the carrot's lowest surface above the plate's well (m)."""
+    ends = chunk_points(pose, 2)
+    return float(min(ends[0][2] - CH_LOW_W / 2, ends[1][2] - CH_UP_W / 2) - (TOP + PLATE_WELL_Z))
+
+
+def hand_on_chunk(pose, arm, side) -> bool:
+    """A gripper is on the carrot: any of its points within 35 mm of the carrot's long axis."""
+    pts = chunk_points(pose, 12)
+    return bool(min(float(np.linalg.norm(g - p)) for g in gripper_points(arm, side) for p in pts) <= 0.035)
