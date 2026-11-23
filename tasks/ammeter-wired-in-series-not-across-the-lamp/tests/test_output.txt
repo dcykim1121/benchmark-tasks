@@ -1,0 +1,55 @@
+OK   nothing done | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   done right: switch off, yellow lead out, meter in its place, switch on | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   same, held only 10 steps | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   meter in series, switch still open | score 0.5 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   LOOSE LIVE PIN: only one yellow plug pulled, meter in the gap, switched on | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   ... then the other yellow plug pulled too | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   TRAP: meter on the lamp's two terminals, switch closed | score 0.0 | shorted True | battery 92.74 A | lamp lit False | meter 91.94 A
+OK   trap for 0.5 s, then corrected to the right wiring | score 0.0 | shorted True | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   short for 9 steps (0.45 s), then pulled out again and done right: not latched | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   short for 10 steps (0.5 s), then pulled out again: latched | score 0.0 | shorted True | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   two shorts of 6 steps with a break between: not latched | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   on the lamp's terminals with the switch open (no current yet) | score 0.0 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   ... the zero falls 0.5 s after the switch is closed, not before | score 0.0 | shorted False | battery 92.74 A | lamp lit False | meter 91.94 A
+OK   ... and then it has fallen | score 0.0 | shorted True | battery 92.74 A | lamp lit False | meter 91.94 A
+OK   on the lamp's terminals the other way round | score 0.0 | shorted True | battery 92.74 A | lamp lit False | meter -91.94 A
+OK   across the battery, switch open | score 0.0 | shorted True | battery 133.33 A | lamp lit False | meter 133.33 A
+OK   across the battery the other way round, switch closed | score 0.0 | shorted True | battery 134.23 A | lamp lit False | meter -133.08 A
+OK   nearest sockets: red into the switch's right terminal, black into the lamp's right terminal | score 0.0 | shorted True | battery 100.51 A | lamp lit False | meter 99.64 A
+OK   meter from the switch's left terminal to the lamp's right terminal | score 0.0 | shorted True | battery 109.69 A | lamp lit False | meter 108.75 A
+OK   meter from battery + to the lamp's right terminal, switch open | score 0.0 | shorted True | battery 120.0 A | lamp lit False | meter 120.0 A
+OK   meter from the lamp's left terminal to battery - | score 0.0 | shorted True | battery 100.51 A | lamp lit False | meter 99.64 A
+OK   no meter: yellow lead's plug moved to the lamp's right terminal | score 0.0 | shorted True | battery 200.0 A | lamp lit False | meter 0.0 A
+OK   no meter: red lead's plug moved from the switch to battery -, switch open | score 0.0 | shorted True | battery 400.0 A | lamp lit False | meter 0.0 A
+OK   no meter: blue lead's plug moved from the lamp's right to its left terminal | score 0.0 | shorted True | battery 200.0 A | lamp lit False | meter 0.0 A
+OK   NOT A SHORT: yellow lead taken out first, then the meter on the lamp's two terminals | score 0.0 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   ... and from there on to the right wiring | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   ROUND THE SWITCH: meter from the switch's left terminal to the lamp, lamp lit and read | score 0.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   ROUND THE SWITCH: the same with the rocker off (lamp still lit) | score 0.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   ROUND THE SWITCH: meter from battery + to the lamp, yellow lead out | score 0.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   meter bridging the open switch, yellow lead in | score 0.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   meter backwards in the gap (needle against its left stop) | score 0.0 | shorted False | battery 1.48 A | lamp lit True | meter -1.48 A
+OK   backwards, then turned round: no latch | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   meter in parallel with the yellow lead | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter 0.19 A
+OK   meter put in beside the yellow lead, then that lead taken out | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   plugs changed with the switch closed throughout, never shorted | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   meter's - plug in the socket the yellow plug came out of | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   one meter plug connected (lamp's left terminal), the other still lying on the board | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter -0.0 A
+OK   lamp circuit broken and left so | score 0.0 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   yellow lead taken out and nothing else | score 0.0 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   PARTLY IN: - plug only 12 mm in, not past the catch: it conducts, lamp lit: 0.5 | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   PARTLY IN: right wiring, then a plug dragged back to 14 mm | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   PARTLY IN: trap plugs only 12 mm in the lamp's sockets: they conduct, a short | score 0.0 | shorted True | battery 92.74 A | lamp lit False | meter 91.94 A
+OK   PARTLY IN: trap plugs 8 mm in for 0.5 s, then pulled back out: still zero | score 0.0 | shorted True | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   NEARNESS: trap plugs 6 mm in the mouths, not yet in the bores: no contact | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   NEARNESS: trap plugs lying with their tips at the mouths: no contact | score 0.0 | shorted False | battery 1.49 A | lamp lit True | meter 0.0 A
+OK   NEARNESS: - plug held 3 mm in front of its socket | score 0.0 | shorted False | battery 0.0 A | lamp lit False | meter 0.0 A
+OK   just past the catch (15 mm) counts as seated | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   TILTED: plugs fully in but held 13 degrees nose-down count as seated | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   TILTED: trap plugs fully in, 13 degrees nose-down: a short | score 0.0 | shorted True | battery 92.74 A | lamp lit False | meter 91.94 A
+OK   right wiring but a gripper still at a plug | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   right wiring but a pulled plug dragged off the board | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   right wiring but a plug still moving | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   right wiring, a pulled yellow plug pushed 12 mm into a spare battery + socket: 0.5 | score 0.5 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+OK   (scorer's generality) meter in the red lead's place, + at battery + | score 1.0 | shorted False | battery 1.48 A | lamp lit True | meter 1.48 A
+54 of 54 passed
