@@ -58,6 +58,7 @@ BOIL_S = 2.0                          # the solvent is drawn boiling once the ma
 JACKET_VIS = tuple(f"jacket_glass_{i + 1}" for i in range(JACKET_STEPS)) + tuple(f"jacket_water_{i + 1}" for i in range(JACKET_STEPS))
 COND_VIS = ("condenser", *JACKET_VIS, "plume_a", "plume_b")
 MANTLE_VIS = ("mantle_flask", "boil_a", "boil_b")
+HOOD_VIS = ("fume_hood", "hood_marks")
 OUTLET_VIS = ("water_outlet", "flow_still", "flow_on", "tub_stream", *(f"tub_water_{i + 1}" for i in range(TUB_STEPS)))
 
 # -- the mantle's controller box (110 x 150 x 60 mm), its switch and lamp on the top panel ----------------------
@@ -73,7 +74,7 @@ LAMP_XY = (CTRL_C[0] + 0.025, CTRL_C[1] - 0.040)
 KNOB_LOCAL = (0.008, 0.032)
 
 # -- a 1 L amber solvent bottle with a flame pictogram on its label, standing at the back; dressing, fixed --------
-BOTTLE_C = (0.630, 0.360)
+BOTTLE_C = (0.500, 0.360)
 BOTTLE_R, BOTTLE_H = 0.046, 0.200
 AMBER = (0.36, 0.17, 0.04)
 
@@ -81,6 +82,24 @@ AMBER = (0.36, 0.17, 0.04)
 STRIP_C = (0.765, 0.205)
 STRIP = (0.062, 0.300, 0.040)        # lying along y, turned half a turn: its plug's cord grip points at the controller
 STRIP_YAW = math.pi
+
+# -- the bench-top fume hood the whole apparatus stands in (fixed): heights are above the bench ------------------
+HOOD_IN_Y = 0.500                    # half the interior width (1.00 m between the side panels)
+HOOD_POST_W = 0.050                  # each front post stands this far into the opening (0.90 m between the posts)
+HOOD_WALL = 0.050                    # side panels (the right one is a glazed frame)
+HOOD_BACK_T = 0.030                  # back panel
+HOOD_X0 = 0.000                      # the front face of the posts and of the panel above the sash
+HOOD_POST_X1 = 0.080                 # the front posts run back to here
+HOOD_BACK = 0.875                    # inner face of the back panel
+HOOD_BAFFLE_X = (0.862, 0.870)       # the slotted baffle in front of the back panel
+HOOD_CEIL, HOOD_TOP = 1.200, 1.500   # interior ceiling and the top of the housing
+SASH_X = (0.031, 0.049)              # the sash: its bottom pull rail's depth (the glass is 6 mm at the middle of it)
+SASH_OPEN = 0.500                    # the sash's lower edge: the marked working height
+SASH_FULL = 0.850                    # the opening's full height (the panel above the sash starts here)
+SILL_X, SILL_H = (0.050, 0.125), 0.022   # the airfoil sill across the front, between the posts
+HOOD_DUCT = (0.480, 0.0, 0.125)      # exhaust collar on the top: axis x, y and radius
+HOOD_LIGHT = 12000.0                 # the ceiling light panel's brightness (a lamp in the simulator)
+ARM_R = 0.050                        # an arm's links, taken as this far round their centre lines, are at the sash when they reach it
 
 HAND_CLEAR = 0.05                    # both hands must end at least this far from the lever, the switch and the apparatus
 
@@ -190,6 +209,38 @@ def strip_object() -> Part:
                        visual_hide=("switch_1", "switch_2", "switch_3", "switch_4", "switch_main", "cooker_cord", "lead")))
 
 
+def hood_boxes():
+    """The hood's colliders as world boxes (lo, hi): what the arms must work round."""
+    yo = HOOD_IN_Y + HOOD_WALL
+    b = {"back": ((HOOD_BACK, -yo, 0.0), (HOOD_BACK + HOOD_BACK_T, yo, HOOD_TOP)),
+         "side_left": ((HOOD_X0, HOOD_IN_Y, 0.0), (HOOD_BACK, yo, HOOD_TOP)),
+         "side_right": ((HOOD_X0, -yo, 0.0), (HOOD_BACK, -HOOD_IN_Y, HOOD_TOP)),
+         "top": ((HOOD_X0, -HOOD_IN_Y, HOOD_CEIL), (HOOD_BACK, HOOD_IN_Y, HOOD_TOP)),
+         "front_panel": ((HOOD_X0, -HOOD_IN_Y, SASH_FULL), (HOOD_X0 + 0.015, HOOD_IN_Y, HOOD_CEIL)),
+         "sash": ((SASH_X[0], -HOOD_IN_Y, SASH_OPEN), (SASH_X[1], HOOD_IN_Y, HOOD_CEIL)),
+         "sill": ((SILL_X[0], -HOOD_IN_Y, 0.0), (SILL_X[1], HOOD_IN_Y, SILL_H)),
+         "post_left": ((HOOD_X0, HOOD_IN_Y - HOOD_POST_W, 0.0), (HOOD_POST_X1, HOOD_IN_Y, HOOD_TOP)),
+         "post_right": ((HOOD_X0, -HOOD_IN_Y, 0.0), (HOOD_POST_X1, -HOOD_IN_Y + HOOD_POST_W, HOOD_TOP)),
+         "baffle": ((HOOD_BAFFLE_X[0], -HOOD_IN_Y, 0.060), (HOOD_BAFFLE_X[1], HOOD_IN_Y, HOOD_CEIL))}
+    return {n: ((lo[0], lo[1], TOP + lo[2]), (hi[0], hi[1], TOP + hi[2])) for n, (lo, hi) in b.items()}
+
+
+def hood_object() -> Part:
+    """The fume hood: fixed. Colliders (hidden boxes): back panel, two side panels, the housing above the ceiling, the
+    panel above the sash, the glass sash with its bottom rail at the working height, the airfoil sill and the baffle.
+    The sash's glass and the glazed right side are drawn perfectly clear (frames, rail and stiles only).
+    The arms work through the opening between the sill and the sash's lower edge."""
+    boxes = hood_boxes()
+    lo, hi = (np.asarray(v) for v in boxes.pop("back"))
+    c0 = (lo + hi) / 2
+    pieces = []
+    for lo_i, hi_i in boxes.values():
+        lo_i, hi_i = np.asarray(lo_i), np.asarray(hi_i)
+        pieces.append(Piece("box", tuple(float(v) for v in hi_i - lo_i), tuple(float(v) for v in (lo_i + hi_i) / 2 - c0), color=GREY))
+    return Part("fume_hood", pos=tuple(float(v) for v in c0), size=tuple(float(v) for v in hi - lo), exact_z=True, color=GREY,
+                friction=(0.5, 0.4), pieces=tuple(pieces), **_vis(HOOD_VIS, (-float(c0[0]), -float(c0[1]), TOP - float(c0[2]))))
+
+
 def controller_object() -> Part:
     """The mantle's controller box: fixed. Colliders (hidden): the box up to 4 mm below its panel, the panel round the
     switch opening as four slabs, the dial. Its lamp is drawn lit or unlit by the task."""
@@ -267,6 +318,15 @@ def condenser_off(condenser, flask):
     rc = quat_matrix(c[3:7])
     tip = math.degrees(math.acos(float(np.clip((rf.T @ rc)[2, 2], -1.0, 1.0))))
     return bool(1000.0 * float(np.linalg.norm(rel)) > MOVE_MM or tip > MOVE_DEG)
+
+
+def sash_gap(points) -> float:
+    """Shortest distance (m) from points along an arm's centre line to the sash (its glass and pull rail, from its
+    lower edge up), less the arm's half thickness ARM_R: 0 or less means the arm is at the glass."""
+    lo, hi = (np.asarray(v, float) for v in hood_boxes()["sash"])
+    p = np.asarray(points, float).reshape(-1, 3)
+    d = np.linalg.norm(np.maximum(np.maximum(lo - p, p - hi), 0.0), axis=1)
+    return float(d.min() - ARM_R)
 
 
 def lever_points(lever):
