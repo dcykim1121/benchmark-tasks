@@ -38,6 +38,7 @@ POST_Z = (0.150, 0.190)               # foot posts, head posts
 BED_YAW = math.pi
 BASE_Z = 0.060                        # the rails and end boards start this high; the bed stands on its posts
 SPACE_OVER = 0.030                    # the sleep space reaches this far above the rails
+OUT_HX, OUT_HY = IN_HX + POST, IN_HY + POST      # half the bed's outer outline, over its corner posts (388 x 248 mm)
 
 # -- soft-bodied baby doll: 26 cm long, 200 g; her frame: origin at the middle of her torso, x toward her head,
 # z out of her tummy (so lying on her back her z points up). She starts with her head toward the robot (DOLL_YAW) -----------------------------------------------------
@@ -49,6 +50,11 @@ HEAD_AT = (0.086, 0.0, 0.011)
 LEGS = (0.085, 0.070, 0.034)
 LEGS_AT = (-0.0925, 0.0, -0.008)
 # the points that stand for her whole body: top of the head, both feet, both hands, both hips, the torso's middle
+# her body as balls for "is something soft against her": (centre, radius) in her frame; the first is her head
+DOLL_BALLS = (((0.086, 0.0, 0.011), 0.036), ((0.030, 0.0, 0.0), 0.028), ((0.0, 0.0, 0.0), 0.028), ((-0.030, 0.0, 0.0), 0.028),
+              ((-0.070, 0.020, -0.008), 0.016), ((-0.070, -0.020, -0.008), 0.016), ((-0.115, 0.022, -0.010), 0.014),
+              ((-0.115, -0.022, -0.010), 0.014), ((0.068, 0.054, -0.012), 0.012), ((0.068, -0.054, -0.012), 0.012))
+TOUCH = 0.005                         # a soft thing is against her when its outline is within this of one of those balls
 DOLL_POINTS = ((0.128, 0.0, 0.011), (-0.132, 0.022, -0.011), (-0.132, -0.022, -0.011), (0.088, 0.060, -0.012),
                (0.088, -0.060, -0.012), (-0.045, 0.028, 0.0), (-0.045, -0.028, 0.0), (0.0, 0.0, 0.0))
 
@@ -64,6 +70,12 @@ SOFT_MASS = {"pillow": 0.035, "plush_toy": 0.045, "blanket": 0.050}
 SOFT_C = {"pillow": (BED_C[0] - 0.098, BED_C[1]), "plush_toy": (BED_C[0] - 0.008, BED_C[1] + 0.015),
           "blanket": (BED_C[0] + 0.110, BED_C[1] - 0.005)}
 SOFT_COLOR = {"pillow": CREAM, "plush_toy": PINK, "blanket": CREAM}
+# each soft thing's outline for scoring: a box in its own frame, as (lowest corner, highest corner); the bunny's covers
+# its head and legs as well as its body
+SOFT_BOX = {"pillow": ((-0.0425, -0.039, -0.011), (0.0425, 0.039, 0.011)),
+            "plush_toy": ((-0.036, -0.023, -0.018), (0.045, 0.023, 0.018)),
+            "blanket": ((-0.0425, -0.039, -0.015), (0.0425, 0.039, 0.015))}
+PUT_DOWN_Z = 0.075                    # a soft thing put down has no part higher than this above the counter
 BUNNY_BODY_X = -0.008                 # the bunny's body (its collider's root) sits this far behind its footprint centre
 
 # -- nursery tray (330 x 190 mm, 14 mm rim) for things taken out; fixed ------------------------------------------
@@ -96,7 +108,7 @@ def bed_object() -> Part:
         for sy in (1.0, -1.0):
             pieces.append(Piece("box", (POST, POST, zt), (sx * (IN_HX + POST / 2), sy * (IN_HY + POST / 2), zt / 2 - zc), color=PINE))
     return Part("doll_bed", pos=(BED_C[0], BED_C[1], TOP + zc), size=(2 * IN_HX, 2 * IN_HY, MATT_Z), exact_z=True,
-                color=CREAM, friction=(0.9, 0.8), pieces=tuple(pieces), yaw=BED_YAW, **_vis(("doll_bed", "bed_rug"), (0.0, 0.0, -zc)))
+                color=CREAM, friction=(0.9, 0.8), pieces=tuple(pieces), yaw=BED_YAW, **_vis(("doll_bed", "bed_rug", "bed_labels"), (0.0, 0.0, -zc)))
 
 
 def mat_object() -> Part:
@@ -165,9 +177,48 @@ def in_outline(p) -> bool:
     return bool(abs(float(p[0]) - BED_C[0]) <= IN_HX and abs(float(p[1]) - BED_C[1]) <= IN_HY)
 
 
-def in_sleep_space(p) -> bool:
-    """A soft thing is in the sleep space: its centre over the mattress and less than 3 cm above the side rails."""
-    return bool(in_outline(p) and float(p[2]) < TOP + RAIL_Z + SPACE_OVER)
+def in_outer_outline(p) -> bool:
+    """A point over the bed as a whole, posts, rails and end boards included (388 x 248 mm)."""
+    return bool(abs(float(p[0]) - BED_C[0]) <= OUT_HX and abs(float(p[1]) - BED_C[1]) <= OUT_HY)
+
+
+def soft_points(name: str, pose):
+    """Twenty-seven points of a soft thing's outline: the corners, edge and face middles and the centre of its box."""
+    pose = np.asarray(pose, float)
+    r = quat_matrix(pose[3:7])
+    lo, hi = (np.asarray(v, float) for v in SOFT_BOX[name])
+    mid = (lo + hi) / 2
+    return [pose[:3] + r @ np.array([x, y, z]) for x in (lo[0], mid[0], hi[0]) for y in (lo[1], mid[1], hi[1])
+            for z in (lo[2], mid[2], hi[2])]
+
+
+def in_sleep_space(name: str, pose) -> bool:
+    """A soft thing is in the sleep space while ANY part of it is over the mattress and less than 3 cm above the top
+    of the side rails: lying in the bed, half in, hanging over a rail into it or held just above it."""
+    return any(in_outline(p) and p[2] < TOP + RAIL_Z + SPACE_OVER for p in soft_points(name, pose))
+
+
+def soft_touching(name: str, pose, doll):
+    """Where a soft thing is against the doll: "head", "body" or None. Its box within TOUCH of one of her balls."""
+    pose = np.asarray(pose, float)
+    doll = np.asarray(doll, float)
+    r = quat_matrix(pose[3:7])
+    rd = quat_matrix(doll[3:7])
+    lo, hi = (np.asarray(v, float) for v in SOFT_BOX[name])
+    hit = None
+    for i, (c, rad) in enumerate(DOLL_BALLS):
+        q = r.T @ (doll[:3] + rd @ np.asarray(c, float) - pose[:3])
+        gap = float(np.linalg.norm(q - np.clip(q, lo, hi))) - rad
+        if gap <= TOUCH:
+            if i == 0:
+                return "head"
+            hit = "body"
+    return hit
+
+
+def doll_part_in_bed(doll) -> bool:
+    """Any part of the doll (head, hands, hips, feet or torso) is over the mattress and below the top of the rails."""
+    return any(in_outline(p) and p[2] < TOP + RAIL_Z for p in doll_points(doll))
 
 
 def doll_in_bed(doll) -> bool:
@@ -202,10 +253,12 @@ def on_counter(p) -> bool:
     return bool(COUNTER_X[0] <= float(p[0]) <= COUNTER_X[1] and abs(float(p[1])) <= COUNTER_Y and float(p[2]) > TOP - 0.02)
 
 
-def soft_put_down(p) -> bool:
-    """A soft thing is out and put down: outside the sleep space, on the counter or the tray (its centre less than
-    5 cm above the counter, which rules out lying on the doll or on the bed's rails)."""
-    return bool(not in_sleep_space(p) and not in_outline(p) and on_counter(p) and float(p[2]) < TOP + 0.050)
+def soft_put_down(name: str, pose) -> bool:
+    """A soft thing is out and put down: every part of it outside the bed's outer outline (so not on a rail, a post or
+    an end board), on the counter or the tray, and no part higher than 7.5 cm above the counter (so not held, and not
+    lying on the doll)."""
+    pts = soft_points(name, pose)
+    return bool(all(not in_outer_outline(p) and on_counter(p) and p[2] < TOP + PUT_DOWN_Z for p in pts))
 
 
 def on_tray(p) -> bool:
