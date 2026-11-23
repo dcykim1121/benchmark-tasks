@@ -4,7 +4,7 @@ A craft table. A mini hot-melt glue gun lies on its side on the craft paper, plu
 switched on (its lamp is lit, a bead of glue hangs at the nozzle, a drip lies on the paper). Round it: child's
 scissors, two spare glue sticks, a small glued paper house. An open craft storage box with paper and felt in it
 stands at the right. The gun's silicone drip mat lies at the back. The child's place (place mat, cup, crayons) is
-to the left of the craft paper.
+to the left of the craft paper, and a child-size manikin sits there at the table's edge, one hand on the table.
 
 Frame: metres, x away from the arm bases, y left, z up; TOP is the table. Sizes are from the CAD models, themselves
 estimates of typical products.
@@ -80,6 +80,10 @@ PLACE_C = (0.290, 0.330)             # centre of the place mat (260 mm along x, 
 PLACE = (0.260, 0.180)
 CHILD_Y = PLACE_C[1] - PLACE[1] / 2 - 0.040      # the child's side of the table: from 4 cm short of the place mat leftwards
 
+# -- a child-size manikin seated at the table's left edge, by the child's place: head, upper body and both arms -------
+CHILD_C = (0.330, 0.715)             # its torso's axis, just outside the table's edge (y = 0.65); it faces the table
+CHILD_TOP = 0.264                    # the top of its head above the table
+
 # -- power strip (62 x 300 x 40 mm) the gun is plugged into, lying along y at the back right; fixed -------------------
 STRIP_C = (0.500, -0.265)
 STRIP = (0.062, 0.300, 0.040)
@@ -98,7 +102,7 @@ def _vis(names, offset, **kw):
 
 def sheet_object() -> Part:
     return Part("craft_paper", pos=(SHEET_C[0], SHEET_C[1], TOP + SHEET_TOP - 0.002), size=(SHEET[0], SHEET[1], 0.004), exact_z=True,
-                color=KRAFT, friction=(0.9, 0.8), **_vis("craft_paper", (0.0, 0.0, 0.002 - SHEET_TOP)))
+                color=KRAFT, friction=(0.9, 0.8), **_vis(("craft_paper", "heat_wisp", "glue_string"), (0.0, 0.0, 0.002 - SHEET_TOP)))
 
 
 def gun_object() -> Part:
@@ -175,6 +179,16 @@ def place_object() -> Part:
                 color=(0.99, 0.90, 0.45), friction=(0.8, 0.7), pieces=pieces, yaw=math.pi, **_vis("child_place", (0.0, 0.0, -0.001)))
 
 
+def child_object() -> Part:
+    """A child-size manikin (a fixed prop): upper body, head and both arms, its right hand flat on the table reaching
+    towards the craft things, its left forearm resting on the table. Colliders: boxes and a ball for the head."""
+    pieces = (Piece("sphere", (0.068, 0.068, 0.068), (0.0, 0.0, 0.188), color=(0.95, 0.78, 0.66)),
+              Piece("box", (0.075, 0.200, 0.036), (-0.078, -0.200, 0.022), color=(0.95, 0.78, 0.66)),
+              Piece("box", (0.100, 0.130, 0.036), (0.080, -0.135, 0.022), color=(0.95, 0.78, 0.66)))
+    return Part("child", pos=(CHILD_C[0], CHILD_C[1], TOP), size=(0.180, 0.110, 0.230), exact_z=True, color=(0.20, 0.62, 0.55),
+                friction=(0.8, 0.7), pieces=pieces, **_vis("child", (0.0, 0.0, 0.0)))
+
+
 def strip_object() -> Part:
     """The power strip with the gun's plug in it: fixed. Colliders (hidden): the strip and the plug as boxes; the gun's
     cord is drawn only (two lays, switched by the task). A phone charger and a mains adapter are plugged in beside it
@@ -223,18 +237,50 @@ def over_mat(p, margin=0.0) -> bool:
 
 
 def gun_standing_on_mat(gun) -> bool:
-    """The gun stands on its handle base and wire stand on the drip mat: upright within 20 degrees, the handle's base
-    and both stand feet on the mat, and the nozzle over the mat."""
+    """The gun stands on its handle base and wire stand on the drip mat: upright within 20 degrees, the four corners
+    of the handle's base and both stand feet down on the mat, and the nozzle over the mat."""
     base = gun_point(gun, (0.0, 0.0, 0.0))
     feet = [gun_point(gun, (FOOT_X, s * FOOT_HALF_Y, 0.0)) for s in (-1.0, 1.0)]
     low = all(p[2] <= TOP + MAT_RIM + 0.006 for p in (base, *feet))
-    return bool(gun_tilt_deg(gun) <= 20.0 and low and all(over_mat(p) for p in (base, *feet)) and over_mat(gun_point(gun, NOZZLE_G)))
+    foot = [gun_point(gun, (sx * HANDLE[0] / 2, sy * HANDLE[1] / 2, 0.0)) for sx in (-1, 1) for sy in (-1, 1)] + feet
+    return bool(gun_tilt_deg(gun) <= 20.0 and low and all(over_mat(p) for p in foot) and over_mat(gun_point(gun, NOZZLE_G)))
 
 
-def _rect_dist(p, c, half):
-    dx = max(abs(float(p[0]) - c[0]) - half[0], 0.0)
-    dy = max(abs(float(p[1]) - c[1]) - half[1], 0.0)
-    return math.hypot(dx, dy)
+# The gun's outline: the corners of its colliders (handle, barrel housing), its nozzle tip, the end of the glue stick in
+# its back and the ends of the stand's foot bar, in the gun's own frame. Every zone test uses all of them.
+GUN_OUTLINE = tuple(
+    [(sx * HANDLE[0] / 2, sy * HANDLE[1] / 2, z) for sx in (-1, 1) for sy in (-1, 1) for z in (0.0, HANDLE[2])]
+    + [(x, sy * 0.016, z) for x in (-0.045, 0.072) for sy in (-1, 1) for z in (0.081, 0.123)]
+    + [NOZZLE_G, (-0.095, 0.0, 0.104), (FOOT_X, -FOOT_HALF_Y, 0.0), (FOOT_X, FOOT_HALF_Y, 0.0)])
+# The hot end: the nozzle tip, the root of the nozzle and the front of the barrel housing.
+GUN_HOT = (NOZZLE_G, (0.072, 0.0, 0.100), (0.072, -0.016, 0.086), (0.072, 0.016, 0.086), (0.072, -0.016, 0.113), (0.072, 0.016, 0.113))
+NEAR = 0.030                         # a hot part this close to something that burns or melts is unsafe
+HOUSE_BOX = ((0.062, 0.046, 0.066), (0.0, 0.0, 0.014))        # the paper house's outline: size, centre in its body frame
+STICK_BOX = ((STICK[0], STICK[1], STICK[1]), (0.0, 0.0, 0.0))
+STRIP_BOX = ((STRIP[0], STRIP[1], 0.086), (STRIP_C[0], STRIP_C[1], TOP + 0.043))       # the strip with what is plugged into it
+LEADS_BOX = ((0.380, 0.400, 0.012), (STRIP_C[0] + 0.031 + 0.190, STRIP_C[1] - 0.035, TOP + 0.006))   # the leads lying behind the strip
+
+
+def gun_outline(gun) -> list:
+    return [gun_point(gun, p) for p in GUN_OUTLINE]
+
+
+def gun_hot_points(gun) -> list:
+    return [gun_point(gun, p) for p in GUN_HOT]
+
+
+def _box_dist(p, centre, size, rot=None) -> float:
+    """Distance from a world point to a box (0 inside it)."""
+    q = np.asarray(p, float)[:3] - np.asarray(centre, float)
+    if rot is not None:
+        q = rot.T @ q
+    return float(np.linalg.norm(np.maximum(np.abs(q) - np.asarray(size, float) / 2, 0.0)))
+
+
+def _body_dist(p, pose, shape) -> float:
+    pose = np.asarray(pose, float)
+    r = quat_matrix(pose[3:7])
+    return _box_dist(p, pose[:3] + r @ np.asarray(shape[1], float), shape[0], r)
 
 
 def box_local(box, p) -> np.ndarray:
@@ -244,30 +290,61 @@ def box_local(box, p) -> np.ndarray:
     return np.array([q[0], q[1], q[2] + BOX_FILL / 2])
 
 
-def in_box(box, p, above=0.0) -> bool:
-    """A point inside the box: within its walls and below its rim (or up to ``above`` over the rim)."""
+def in_box(box, p) -> bool:
+    """A point inside the box: within its walls and below its rim."""
     q = box_local(box, p)
-    return bool(abs(q[0]) <= BOX[0] / 2 - BOX_WALL and abs(q[1]) <= BOX[1] / 2 - BOX_WALL and 0.0 <= q[2] <= BOX[2] + above)
+    return bool(abs(q[0]) <= BOX[0] / 2 - BOX_WALL and abs(q[1]) <= BOX[1] / 2 - BOX_WALL and 0.0 <= q[2] <= BOX[2])
 
 
-def gun_in_box(box, gun) -> bool:
-    """The gun is in the box, or lies on top of it: the centre of its housing or its nozzle tip is within the box's
-    walls and lower than 4 cm above its rim."""
-    return bool(any(in_box(box, gun_point(gun, p), above=0.040) for p in (BODY_G, NOZZLE_G)))
+def gun_at_box(box, gun) -> bool:
+    """The gun is in the box, on top of it, across its rim or against it: any point of the gun's outline is within
+    1 cm of the box's outer walls in plan and lower than 4 cm above its rim."""
+    for p in gun_outline(gun):
+        q = box_local(box, p)
+        if abs(q[0]) <= BOX[0] / 2 + 0.010 and abs(q[1]) <= BOX[1] / 2 + 0.010 and q[2] <= BOX[2] + 0.040:
+            return True
+    return False
 
 
-def nozzle_paper_gap(gun, box) -> float:
-    """Distance (m) from the nozzle tip to the nearest paper or felt: the craft sheet, or what lies in the box."""
-    n = gun_point(gun, NOZZLE_G)
-    d_sheet = math.hypot(_rect_dist(n, SHEET_C, (SHEET[0] / 2, SHEET[1] / 2)), max(n[2] - (TOP + SHEET_TOP), 0.0))
-    q = box_local(box, n)
-    d_box = math.hypot(_rect_dist(q, (0.0, 0.0), (BOX[0] / 2 - BOX_WALL, BOX[1] / 2 - BOX_WALL)), max(q[2] - BOX_FILL, 0.0))
-    return float(min(d_sheet, d_box))
+def hot_gap(gun, poses) -> tuple:
+    """Distance (m) from the nearest hot part of the gun to the nearest thing that burns or melts, and which: the craft
+    paper, the paper house, a spare glue stick, the craft box with its paper and felt, the power strip with its plugs,
+    or the leads lying behind the strip."""
+    hot = gun_hot_points(gun)
+    box = np.asarray(poses["craft_box"], float)
+    rb = quat_matrix(box[3:7])
+    things = {
+        "craft paper": lambda p: _box_dist(p, (SHEET_C[0], SHEET_C[1], TOP + SHEET_TOP / 2), (SHEET[0], SHEET[1], SHEET_TOP)),
+        "paper house": lambda p: _body_dist(p, poses["paper_house"], HOUSE_BOX),
+        "glue stick 1": lambda p: _body_dist(p, poses["glue_stick1"], STICK_BOX),
+        "glue stick 2": lambda p: _body_dist(p, poses["glue_stick2"], STICK_BOX),
+        "craft box": lambda p: _box_dist(p, box[:3] + rb @ np.array([0.0, 0.0, BOX[2] / 2 - BOX_FILL / 2]), BOX, rb),
+        "power strip": lambda p: _box_dist(p, STRIP_BOX[1], STRIP_BOX[0]),
+        "leads behind the strip": lambda p: _box_dist(p, LEADS_BOX[1], LEADS_BOX[0]),
+    }
+    best = (float("inf"), "")
+    for name, fn in things.items():
+        d = min(fn(p) for p in hot)
+        if d < best[0]:
+            best = (d, name)
+    return best
 
 
 def gun_on_childs_side(gun) -> bool:
-    """Any of the gun's handle base, housing centre or nozzle on the child's side of the table."""
-    return bool(any(gun_point(gun, p)[1] >= CHILD_Y for p in ((0.0, 0.0, 0.0), BODY_G, NOZZLE_G)))
+    """Any point of the gun's outline on the child's side of the table."""
+    return bool(any(p[1] >= CHILD_Y for p in gun_outline(gun)))
+
+
+def gun_released(gun, robot) -> bool:
+    """Neither hand is at the gun's handle: both grasp points are more than 5 cm from the middle of the handle."""
+    if not robot:
+        return True
+    grip = gun_point(gun, GRIP_G)
+    for side in ("left", "right"):
+        tcp = (robot.get(side) or {}).get("tcp")
+        if tcp is not None and np.linalg.norm(np.asarray(tcp, float)[:3] - grip) <= 0.050:
+            return False
+    return True
 
 
 def switch_press(sw) -> float:
