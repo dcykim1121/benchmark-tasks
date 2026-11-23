@@ -84,6 +84,7 @@ SCAN_ANGLE = 30.0                    # most the window's axis may be off the bar
 SCAN_OFF = 0.030                     # most the barcode's centre may be off the window's axis line
 SCAN_HOLD = 10                       # steps (0.5 s at 20 Hz) the aim must be held for a read
 SCAN_REARM = 10                      # steps the aim must have been off that code before it can be read again
+# A read also needs a clear line of sight: see `sight_clear`.
 
 
 def _vis(names, offset, **kw):
@@ -208,9 +209,40 @@ def aim(scanner, name, pose):
     return d, ang, off
 
 
-def in_read_zone(scanner, name, pose) -> bool:
+def inside(name, pose, p, shrink=0.002) -> bool:
+    """A point inside an item's body (its collider, drawn in by `shrink`): the carton and the juice carton as boxes
+    (the juice carton with its gable), the tin as a cylinder."""
+    it = ITEMS[name]
+    pose = np.asarray(pose, float)
+    q = quat_matrix(pose[3:7]).T @ (np.asarray(p, float)[:3] - pose[:3])
+    if it["shape"] == "cylinder":
+        return bool(math.hypot(q[0], q[1]) <= it["size"][0] - shrink and abs(q[2]) <= it["size"][1] / 2 - shrink)
+    hx, hy, hz = (v / 2 - shrink for v in it["size"])
+    if abs(q[0]) <= hx and abs(q[1]) <= hy and abs(q[2]) <= hz:
+        return True
+    return bool(name == "juice_carton" and abs(q[0]) <= hx and abs(q[1]) <= 0.011 and hz <= q[2] <= JUICE_TOP - it["size"][2] / 2 - shrink)
+
+
+def sight_clear(scanner, name, poses) -> bool:
+    """Line of sight from the window to an item's barcode: the window is on the barcode's outward side, and the
+    straight line from the window's centre to the barcode's centre passes through no item's body (neither another
+    item nor the item's own)."""
+    w, _ = window(scanner)
+    c, n = barcode(name, poses[name])
+    if float((w - c) @ n) <= 0.0:
+        return False
+    for t in np.linspace(0.02, 0.98, 49):
+        p = w + t * (c - w)
+        if any(inside(other, poses[other], p) for other in ITEM_NAMES):
+            return False
+    return True
+
+
+def in_read_zone(scanner, name, pose, poses=None) -> bool:
     d, ang, off = aim(scanner, name, pose)
-    return bool(SCAN_MIN <= d <= SCAN_MAX and ang <= SCAN_ANGLE and off <= SCAN_OFF)
+    if not (SCAN_MIN <= d <= SCAN_MAX and ang <= SCAN_ANGLE and off <= SCAN_OFF):
+        return False
+    return bool(poses is None or sight_clear(scanner, name, poses))
 
 
 def corners(name, pose):
@@ -226,14 +258,23 @@ def corners(name, pose):
     return [p[:3] + r @ np.array([sx * hx, sy * hy, sz * hz]) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
 
 
-def in_tray(name, pose) -> bool:
-    """An item is in the bagging tray: its whole bounding box is within the tray's outline and it rests on the
-    tray's floor (its lowest corner no more than 12 mm above the floor), standing or lying."""
+def over_tray(p, margin=0.004) -> bool:
+    return bool(abs(float(p[0]) - TRAY_C[0]) <= TRAY[0] / 2 + margin and abs(float(p[1]) - TRAY_C[1]) <= TRAY[1] / 2 + margin)
+
+
+def in_tray_area(name, pose) -> bool:
+    """An item is in the bagging tray's area: every corner of its bounding box is within the tray's outline (the
+    whole item, not its centre) and its lowest corner is between the tray's floor and 15 cm above the counter (on
+    the floor or on other goods in the tray, not held high over it), standing or lying."""
     cs = corners(name, pose)
-    lx, ly = TRAY[0] / 2 + 0.004, TRAY[1] / 2 + 0.004
-    inside = all(abs(c[0] - TRAY_C[0]) <= lx and abs(c[1] - TRAY_C[1]) <= ly for c in cs)
     low = min(c[2] for c in cs)
-    return bool(inside and TOP + TRAY_FLOOR - 0.006 <= low <= TOP + TRAY_FLOOR + 0.012)
+    return bool(all(over_tray(c) for c in cs) and TOP + TRAY_FLOOR - 0.006 <= low <= TOP + 0.150)
+
+
+def in_tray(name, pose) -> bool:
+    """In the tray's area and down on its floor (lowest corner no more than 12 mm above the floor)."""
+    low = min(c[2] for c in corners(name, pose))
+    return bool(in_tray_area(name, pose) and low <= TOP + TRAY_FLOOR + 0.012)
 
 
 def let_go(name, pose, tcps) -> bool:
@@ -249,6 +290,9 @@ def let_go(name, pose, tcps) -> bool:
     return True
 
 
+FREE_SPEED = 0.50                    # m/s: an item or the scanner moving faster than this out of the grippers has been dropped, thrown or knocked
+
+
 def off_counter(pose) -> bool:
     return bool(float(pose[2]) < TOP - 0.05)
 
@@ -260,11 +304,36 @@ def scanner_in_cradle(scanner) -> bool:
                 and tilt_deg(s) < 20.0)
 
 
-def scanner_put_down(scanner, tcps) -> bool:
-    """The scanner is out of the hands: in its cradle, or lying on the counter or the cradle, with both grippers at
-    least 8 cm from its grip."""
+def box_distance(name, pose, p) -> float:
+    """Distance from a point to an item's bounding box (0 inside it)."""
+    it = ITEMS[name]
+    half = np.array([it["size"][0], it["size"][0], it["size"][1] / 2] if it["shape"] == "cylinder" else [v / 2 for v in it["size"]])
+    pose = np.asarray(pose, float)
+    q = np.abs(quat_matrix(pose[3:7]).T @ (np.asarray(p, float)[:3] - pose[:3])) - half
+    return float(np.linalg.norm(np.maximum(q, 0.0)))
+
+
+def scanner_points(scanner):
+    """Three points of the scanner: the foot of its grip, the middle of its grip and its window."""
+    s = np.asarray(scanner, float)
+    r = quat_matrix(s[3:7])
+    return [s[:3] + r @ np.array([0.0, 0.0, -S_GRIP[2] / 2]), grip_centre(s), window(s)[0]]
+
+
+def scanner_put_down(scanner, tcps, poses=None) -> bool:
+    """The scanner is out of the hands and put away: both grippers at least 8 cm from its grip, and it either stands
+    in its cradle or lies on the counter: low, no part of it over the bagging tray and not on or against the goods
+    (its foot, grip and window each at least 2 cm from every item)."""
     s = np.asarray(scanner, float)
     g = grip_centre(s)
     free = all(float(np.linalg.norm(np.asarray(t, float)[:3] - g)) >= 0.08 for t in tcps)
-    low = float(s[2]) <= TOP + 0.075
-    return bool(free and not off_counter(s) and (scanner_in_cradle(s) or low))
+    if not free or off_counter(s):
+        return False
+    if scanner_in_cradle(s):
+        return True
+    pts = scanner_points(s)
+    if any(over_tray(p, 0.020) for p in pts) or float(s[2]) > TOP + 0.075:
+        return False
+    if poses is not None and any(box_distance(n, poses[n], p) < 0.020 for n in ITEM_NAMES for p in pts):
+        return False
+    return True

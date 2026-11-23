@@ -1,9 +1,10 @@
 """Stateful scorer for "Scan the shopping and put it in the bagging area." From measured poses and the scan rule.
 
-Each of the three items earns 1/3 when it has been scanned exactly once and is in the bagging tray, let go. An item in the
-tray that was never scanned earns nothing and latches `unscanned_in_bag`, which caps the trial at 0.33. Every extra
-scan of an item (a double charge) takes 1/3 off. Full credit also needs the scanner out of the hands (in its cradle
-or lying on the counter). Scans are counted here from the measured poses with the same disclosed rule the scene's
+Each of the three items earns 1/3 when it has been scanned exactly once and is in the bagging tray (its whole outline
+inside, on the floor or on other goods), let go, and was never dropped, thrown or knocked. An item put in the tray
+unscanned earns nothing and latches `unscanned_in_bag`, which caps the trial at 0.33. Every extra scan of an item (a
+double charge) takes 1/3 off. Full credit also needs the scanner out of the hands and put away (in its cradle, or
+lying on the counter clear of the tray and the goods, not dropped). Scans are counted here from the measured poses with the same disclosed rule the scene's
 lamps use, so the score can be replayed from a trajectory."""
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ class ScanCounter:
 
     def update(self, root_poses):
         scanner = root_poses["scanner"]
-        zone = {n: K.in_read_zone(scanner, n, root_poses[n]) for n in K.ITEM_NAMES}
+        zone = {n: K.in_read_zone(scanner, n, root_poses[n], root_poses) for n in K.ITEM_NAMES}
         if sum(zone.values()) > 1:         # one code at a time: the nearest to the window's axis
             best = min((n for n in K.ITEM_NAMES if zone[n]), key=lambda n: K.aim(scanner, n, root_poses[n])[2])
             zone = {n: n == best for n in K.ITEM_NAMES}
@@ -58,6 +59,8 @@ class TrialScorer:
         self.bag_frames = {n: 0 for n in K.ITEM_NAMES}
         self.unscanned_in_bag = False
         self.lost = {n: False for n in K.ITEM_NAMES}
+        self.rough = {n: False for n in (*K.ITEM_NAMES, "scanner")}
+        self.prev = None
 
     def update(self, step, objects, root_poses, robot, mechanics=None, **_):
         if step != self.step + 1:
@@ -68,12 +71,24 @@ class TrialScorer:
         tcps = [robot[s]["tcp"] for s in ("left", "right")] if robot else []
         total = 0.0
         bagged = {}
+        now = {n: np.asarray(root_poses[n], float)[:3] for n in (*K.ITEM_NAMES, "scanner")}
+        if self.prev is not None and tcps:                 # dropped, thrown or knocked: moving fast with no gripper at it
+            for n in K.ITEM_NAMES:
+                if float(np.linalg.norm(now[n] - self.prev[n])) * HZ > K.FREE_SPEED and K.let_go(n, root_poses[n], tcps):
+                    self.rough[n] = True
+            g = K.grip_centre(root_poses["scanner"])
+            if (float(np.linalg.norm(now["scanner"] - self.prev["scanner"])) * HZ > K.FREE_SPEED
+                    and all(float(np.linalg.norm(np.asarray(t, float)[:3] - g)) >= 0.08 for t in tcps)):
+                self.rough["scanner"] = True
+        self.prev = now
         for n in K.ITEM_NAMES:
             pose = np.asarray(root_poses[n], float)
             if K.off_counter(pose):
                 self.lost[n] = True
-            inside = K.in_tray(n, pose) and not self.lost[n]
-            bagged[n] = inside and K.let_go(n, pose, tcps)
+            free = K.let_go(n, pose, tcps)
+            area = K.in_tray_area(n, pose) and not self.lost[n]
+            bagged[n] = area and free and not self.rough[n]
+            inside = area and (free or K.in_tray(n, pose))     # put in the tray: down on its floor, or left on the goods in it
             self.bag_frames[n] = self.bag_frames[n] + 1 if (inside and count[n] == 0) else 0
             if self.bag_frames[n] >= BAG_HOLD:
                 self.unscanned_in_bag = True
@@ -83,7 +98,7 @@ class TrialScorer:
         total = max(total - THIRD * doubles, 0.0)
         if self.unscanned_in_bag:
             total = min(total, 0.33)
-        put_down = K.scanner_put_down(root_poses["scanner"], tcps) if tcps else False
+        put_down = (K.scanner_put_down(root_poses["scanner"], tcps, root_poses) and not self.rough["scanner"]) if tcps else False
         full = total > 0.999 and put_down
         self.held = self.held + 1 if full else 0
         if total > 0.999:
@@ -96,5 +111,6 @@ class TrialScorer:
                 "bagged_crackers": bool(bagged["cracker_carton"]), "bagged_juice": bool(bagged["juice_carton"]),
                 "bagged_beans": bool(bagged["bean_tin"]), "items_bagged": int(sum(bagged.values())),
                 "unscanned_in_bag": bool(self.unscanned_in_bag), "items_off_counter": int(sum(self.lost.values())),
+                "items_dropped_or_knocked": int(sum(self.rough[n] for n in K.ITEM_NAMES)), "scanner_dropped": bool(self.rough["scanner"]),
                 "scanner_put_down": bool(put_down), "scanner_in_cradle": bool(K.scanner_in_cradle(root_poses["scanner"])),
                 "held_frames": self.held, "dropped": False, "clear": True}

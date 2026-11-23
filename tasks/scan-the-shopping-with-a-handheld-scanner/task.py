@@ -6,7 +6,7 @@ read until the tin is turned. A cordless handheld scanner stands in its cradle, 
 customer display has one lamp per item. Each item has to be scanned once, and only once, and put in the tray.
 
 The scanner does not read anything optically: a read is a disclosed rule on the measured poses of the scanner and
-the items (see `Dynamics`).
+the items, with a line-of-sight test against the goods (see `Dynamics`).
 """
 from __future__ import annotations
 
@@ -63,8 +63,9 @@ def make_scorer():
 class Dynamics:
     """One disclosed rule: reading a barcode. The scanner reads an item's barcode when its window is aimed at it: the
     barcode's centre 5 to 20 cm from the window's centre and within 3 cm of the window's axis line, and the axis
-    within 30 degrees of the barcode's normal, held for 0.5 s (10 steps). Nothing optical is simulated and things in
-    between are ignored. On a read the item's lamp on the customer display lights and its count goes up by one. The
+    within 30 degrees of the barcode's normal, with a clear line of sight (the window on the barcode's outward side and
+    the straight line from window to barcode through no item's body), held for 0.5 s (10 steps). Nothing optical is
+    simulated; grippers and fixtures do not block the line. On a read the item's lamp on the customer display lights and its count goes up by one. The
     same barcode is read again (a double charge) if the aim leaves it for 0.5 s and then holds on it again."""
 
     def __init__(self, env):
@@ -269,6 +270,7 @@ def agent_view(poses):
         f"bagging tray: centre ({K.TRAY_C[0]:.3f}, {K.TRAY_C[1]:.3f}), 24 cm (x) by 22 cm (y) outside, rim 22 mm high, floor at z {K.TOP + K.TRAY_FLOOR:.3f}",
         f"customer display on a pole at ({K.DISPLAY_C[0]:.3f}, {K.DISPLAY_C[1]:.3f}): three lamps, numbered 1 to 3 from its left end as the robot sees it; a lamp lights when its item has been read",
         "a barcode is read when the scanner's window is aimed at it for half a second: 5 to 20 cm away, the window's axis within 30 "
-        "degrees of the barcode's normal and passing within 3 cm of its centre. Reading the same barcode again counts again",
+        "degrees of the barcode's normal and passing within 3 cm of its centre, with nothing of the goods between window and barcode. "
+        "Reading the same barcode again counts again",
     ]
     return out
