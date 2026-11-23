@@ -69,6 +69,8 @@ class TrialScorer:
                 "wrong_stamp_mark": bool(self.wrong), "inked": [bool(v) for v in inked],
                 "mark_centre_in_box": bool(centre), "mark_outline_in_box": whole, "mark_square": square,
                 "mark_whole": bool(last is not None and int(last[4]) == 1), "mark_smear_mm": round(float(last[5]), 1) if last else 0.0,
+                "press_force_n": float(last[6]) if last else 0.0, "press_force_at_print_n": float(last[7]) if last else 0.0,
+                "ink_force_n": float((mech.get("ink_force_n") or [0.0] * len(K.STAMPS))[K.APPROVED]),
                 "prints_off_sheet": int(sum(mech.get("prints_off_sheet", []))), "other_stamps_in_rack": bool(others),
                 "mark_offset_mm": round(float(offset), 1), "mark_angle_deg": round(float(angle), 1),
                 "sheet_on_desk_pad": bool(on_pad), "sheet_in_place": bool(in_place), "sheet_shift_mm": round(shift[0], 1), "sheet_turn_deg": round(shift[1], 1),

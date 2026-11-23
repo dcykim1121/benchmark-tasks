@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from simkit import Part, Piece
+from simkit import Part, Piece, Spring
 
 TOP = 0.7475
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -66,11 +66,17 @@ RACK_FLOOR = 0.0058
 INK_C = (0.275, -0.310)
 TIN_SIZE = (0.070, 0.110, 0.011)
 FELT = (0.064, 0.104, 0.013)
+TIN_FLOOR = 0.005                    # the tin's collider under the felt
+FELT_SLAB, FELT_TRAVEL, FELT_K = 0.006, 0.002, 4000.0   # the felt: a 6 mm slab that gives up to 2 mm on a 4 N/mm spring
 LID = (0.072, 0.112, 0.009)
 LID_DX = 0.076
 
 # -- the disclosed rule's numbers --------------------------------------------------------------------------------------
-INK_GAP = 0.002                      # a stamp takes ink when its face is this close to the felt ...
+INK_GAP = 0.0015                     # "on the felt": every corner of the face this close to the felt's surface
+INK_FORCE = 2.0                      # N: a stamp takes ink when it is pressed on the felt at least this hard
+PRINT_FORCE = 5.0                    # N: a whole, legible print needs the die flat on the page and pressed at least this hard
+BAND_MAX = 20.0                      # N: the upper end of an ordinary hand press (reported, not enforced)
+TOUCH_FORCE = 0.2                    # N: below this a contact is not counted at all
 PRINT_GAP = 0.0015                   # ... and prints where its inked face comes this close to the top page
 LIFT_GAP = 0.003                     # a press ends when the whole face is this far off the page again
 UPRIGHT = 15.0                       # inking needs the stamp upright within this many degrees
@@ -114,7 +120,7 @@ def stamp_object(i) -> Part:
     pieces = (Piece("box", MOUNT, (0.0, 0.0, FOOT[2] + MOUNT[2] / 2 - zc), color=WOOD),
               Piece("box", HANDLE, (0.0, 0.0, FOOT[2] + MOUNT[2] + HANDLE[2] / 2 - zc), color=WOOD))
     return Part(STAMPS[i], pos=stamp_start(i), size=FOOT, exact_z=True, mass=STAMP_MASS, color=WOOD, friction=(1.2, 1.0),
-                pieces=pieces, contact_offset=0.002, com=(0.0, 0.0, 0.030 - zc),
+                pieces=pieces, contact_offset=0.002, com=(0.0, 0.0, 0.030 - zc), contact_report=True,
                 **_vis(("stamp", f"label_{WORDS[i].lower()}"), (0.0, 0.0, -zc)))
 
 
@@ -136,12 +142,20 @@ def rack_object() -> Part:
 
 
 def ink_object() -> Part:
-    """The ink pad: fixed. Colliders (hidden): the felt, the tin round it and the open lid, as boxes."""
-    zc = FELT[2] / 2
-    pieces = (Piece("box", TIN_SIZE, (0.0, 0.0, TIN_SIZE[2] / 2 - zc), color=TIN),
-              Piece("box", LID, (LID_DX, 0.0, LID[2] / 2 - zc), color=TIN))
-    return Part("ink_pad", pos=(INK_C[0], INK_C[1], TOP + zc), size=FELT, exact_z=True, color=(0.05, 0.05, 0.09),
-                friction=(0.9, 0.8), pieces=pieces, **_vis("ink_pad", (0.0, 0.0, -zc)))
+    """The ink pad's tin and open lid: fixed. Colliders (hidden): the tin's floor and the lid as boxes. Its felt is a
+    separate sprung body (felt_object)."""
+    zc = TIN_FLOOR / 2
+    pieces = (Piece("box", LID, (LID_DX, 0.0, LID[2] / 2 - zc), color=TIN),)
+    return Part("ink_pad", pos=(INK_C[0], INK_C[1], TOP + zc), size=(TIN_SIZE[0], TIN_SIZE[1], TIN_FLOOR), exact_z=True, color=TIN,
+                friction=(0.9, 0.8), pieces=pieces, **_vis("ink_pad", (0.0, 0.0, -zc), visual_hide=("pad",)))
+
+
+def felt_object() -> Part:
+    """The ink pad's felt: a dark slab on a stiff spring (it gives under a stamp as inked felt does), so the force a
+    stamp presses on it with is also its measured travel times FELT_K."""
+    spring = Spring(axis="Z", lower=-FELT_TRAVEL, upper=0.0, stiffness=FELT_K, damping=15.0, target=0.0)
+    return Part("ink_felt", pos=(INK_C[0], INK_C[1], TOP + FELT[2] - FELT_SLAB / 2), size=(FELT[0], FELT[1], FELT_SLAB), exact_z=True,
+                mass=0.020, color=(0.05, 0.05, 0.09), friction=(0.9, 0.8), spring=spring, contact_offset=0.001)
 
 
 def pen_object() -> Part:
@@ -176,12 +190,18 @@ def face_corners(stamp):
     return [stamp[:3] + r @ np.array([sx * FACE[0] / 2, sy * FACE[1] / 2, -FOOT[2] / 2]) for sx in (-1, 1) for sy in (-1, 1)]
 
 
-def on_felt(stamp) -> bool:
-    """A stamp pressed on the ink pad: upright, its whole face within the felt's outline and within INK_GAP of it."""
+def on_felt(stamp, felt) -> bool:
+    """A stamp standing on the ink pad's felt: upright, its whole face within the felt's outline and down on it."""
     if tilt_deg(stamp) > UPRIGHT:
         return False
-    return all(abs(c[0] - INK_C[0]) <= FELT[0] / 2 and abs(c[1] - INK_C[1]) <= FELT[1] / 2 and c[2] - (TOP + FELT[2]) <= INK_GAP
+    top = float(np.asarray(felt, float)[2]) + FELT_SLAB / 2
+    return all(abs(c[0] - INK_C[0]) <= FELT[0] / 2 and abs(c[1] - INK_C[1]) <= FELT[1] / 2 and c[2] - top <= INK_GAP
                for c in face_corners(stamp))
+
+
+def felt_travel(felt) -> float:
+    """How far the felt is pushed down (m)."""
+    return float(TOP + FELT[2] - FELT_SLAB / 2 - np.asarray(felt, float)[2])
 
 
 def sheet_contact(stamp, sheet, gap):
@@ -216,12 +236,18 @@ def desk_contact(stamp, sheet, gap) -> bool:
 
 
 class InkRule:
-    """The disclosed rule. A stamp is inked once it has been pressed on the ink pad, and stays inked. Each time an inked
-    stamp's face touches the top page (any corner or the centre of the face over the page and within PRINT_GAP of it)
-    it leaves one mark there, until it is lifted LIFT_GAP clear: one press, one mark. The mark's place and angle are
-    the stamp's when most of its face was down. The mark is whole if all four corners of the face were down at once;
-    it is smeared by as far as the stamp slid over the page while touching. An inked stamp touching the desk pad or the
-    counter leaves a print there, which is counted and reported."""
+    """The disclosed rule, from measured contact forces and poses. `forces` gives, for each stamp, the measured contact
+    force (N) between that stamp and the invoice book ("sheet") and between it and the ink pad's felt ("felt").
+
+    Ink: a stamp is inked once it stands on the felt (upright, whole face on it) pressed with at least INK_FORCE; it
+    stays inked. Print: while an inked stamp's face touches the top page with a measured force of at least TOUCH_FORCE
+    it leaves one mark there, until it is lifted LIFT_GAP clear: one press, one mark. The mark is WHOLE (a legible
+    impression) only if, during that press, the die lay flat on the page (all four corners down) while the force was
+    at least PRINT_FORCE; a lighter or tilted touch, the stamp's own weight included, leaves a faint or partial mark
+    that still counts as a mark. The mark's place and angle are the stamp's at the first moment it was whole (else when
+    most of its face was down). It is smeared by as far as the stamp slid over the page while touching. A stamp held
+    just above the page, touching nothing, leaves nothing. An inked stamp touching the desk pad or the counter is
+    counted and reported."""
 
     def __init__(self):
         self.reset()
@@ -229,36 +255,47 @@ class InkRule:
     def reset(self):
         n = len(STAMPS)
         self.inked = [False] * n
-        self.marks = []                      # [stamp, x mm, y mm, yaw deg, whole 0/1, smear mm], sheet's frame, in order made
+        self.ink_force = [0.0] * n           # the force on the felt at the moment each stamp took ink
+        self.marks = []                      # [stamp, x mm, y mm, yaw deg, whole 0/1, smear mm, peak force N, force when it became whole N]
         self.press = [None] * n              # the press in progress: [index into marks, most corners down so far, (x, y) at first touch]
         self.on_desk = [False] * n
         self.desk_prints = [0] * n
 
-    def update(self, root_poses) -> dict:
+    def update(self, root_poses, forces=None) -> dict:
         sheet = root_poses["sheet"]
+        felt = root_poses["ink_felt"]
+        forces = forces or {}
+        f_sheet = list(forces.get("sheet", [0.0] * len(STAMPS)))
+        f_felt = list(forces.get("felt", [0.0] * len(STAMPS)))
         for i, name in enumerate(STAMPS):
             s = root_poses[name]
             if not self.inked[i]:
-                if on_felt(s):
+                if f_felt[i] >= INK_FORCE and on_felt(s, felt):
                     self.inked[i] = True
+                    self.ink_force[i] = round(float(f_felt[i]), 2)
                 continue
+            f = float(f_sheet[i])
             n, mid, place = sheet_contact(s, sheet, PRINT_GAP)
+            touch = bool((n or mid) and f >= TOUCH_FORCE)
             if self.press[i] is None:
-                if n or mid:
-                    self.marks.append([i, round(1000 * place[0], 2), round(1000 * place[1], 2), round(place[2], 2), int(n == 4), 0.0])
-                    self.press[i] = [len(self.marks) - 1, n, place[:2]]
+                if touch:
+                    self.marks.append([i, round(1000 * place[0], 2), round(1000 * place[1], 2), round(place[2], 2), 0, 0.0, 0.0, 0.0])
+                    self.press[i] = [len(self.marks) - 1, 0, place[:2]]
             else:
-                k, best, first = self.press[i]
                 far_n, far_mid, _ = sheet_contact(s, sheet, LIFT_GAP)
                 if not (far_n or far_mid):
                     self.press[i] = None
-                elif n or mid:
-                    m = self.marks[k]
-                    if n > best:
-                        m[1], m[2], m[3] = round(1000 * place[0], 2), round(1000 * place[1], 2), round(place[2], 2)
-                        self.press[i][1] = n
-                    m[4] = int(m[4] or n == 4)
-                    m[5] = round(max(m[5], 1000 * math.hypot(place[0] - first[0], place[1] - first[1])), 2)
+            if self.press[i] is not None and touch:
+                k, best, first = self.press[i]
+                m = self.marks[k]
+                legible = bool(n == 4 and f >= PRINT_FORCE)
+                if (legible and not m[4]) or (not m[4] and n > best):
+                    m[1], m[2], m[3] = round(1000 * place[0], 2), round(1000 * place[1], 2), round(place[2], 2)
+                    self.press[i][1] = max(best, n)
+                if legible and not m[4]:
+                    m[4], m[7] = 1, round(f, 2)
+                m[5] = round(max(m[5], 1000 * math.hypot(place[0] - first[0], place[1] - first[1])), 2)
+                m[6] = round(max(m[6], f), 2)
             touching = self.press[i] is None and desk_contact(s, sheet, PRINT_GAP)
             if touching and not self.on_desk[i]:
                 self.desk_prints[i] += 1
@@ -266,7 +303,9 @@ class InkRule:
             elif self.on_desk[i] and not desk_contact(s, sheet, LIFT_GAP):
                 self.on_desk[i] = False
         return {"inked": [bool(v) for v in self.inked], "marks": [list(m) for m in self.marks],
-                "prints_off_sheet": [int(v) for v in self.desk_prints]}
+                "prints_off_sheet": [int(v) for v in self.desk_prints], "ink_force_n": [float(v) for v in self.ink_force],
+                "force_on_sheet_n": [round(float(v), 2) for v in f_sheet], "force_on_felt_n": [round(float(v), 2) for v in f_felt],
+                "felt_travel_mm": round(1000 * felt_travel(felt), 2)}
 
 
 def mark_offset(mark):

@@ -31,7 +31,7 @@ NAME = "stamp-the-invoice-approved"
 INSTRUCTION = json.loads((_here / "task.json").read_text())["instruction"]
 HZ = 20
 MAX_STEPS = 1600
-OBJECT_NAMES = ("sheet", *K.STAMPS)
+OBJECT_NAMES = ("sheet", *K.STAMPS, "ink_felt")
 
 DOWN = simkit.patch_demo()
 
@@ -46,7 +46,7 @@ def make_environment(embodiment, device, control_hz=HZ):
     from yam_arena import scene as yscene
 
     objects = yscene.task_room("station", embodiment.rig.top_cam)
-    specs = [K.pad_object(), K.rack_object(), K.ink_object(), K.pen_object(), K.sheet_object(),
+    specs = [K.pad_object(), K.rack_object(), K.ink_object(), K.felt_object(), K.pen_object(), K.sheet_object(),
              *(K.stamp_object(i) for i in range(len(K.STAMPS)))]
     objects += [yscene.task_object(s) for s in specs]
     cfg = IsaacLabArenaEnvironment(name="yam_stamp_the_invoice_approved", scene=Scene(objects), embodiment=embodiment,
@@ -58,29 +58,44 @@ def make_scorer():
     return TrialScorer()
 
 
+def _arr(x):
+    x = getattr(x, "torch", x)
+    x = x.numpy() if hasattr(x, "numpy") and not hasattr(x, "detach") else x
+    return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
+
+
 class Dynamics:
-    """One disclosed rule: ink. A stamp is inked once its rubber face has been pressed on the ink pad (the whole face
-    inside the felt's outline and within 2 mm of it, the stamp upright within 15 degrees), and it stays inked. Each
-    time an inked stamp's face touches the top page (any corner or the centre of the face over the page and within
-    1.5 mm of it) it leaves one mark there, until it is lifted 3 mm clear: one press, one mark. The mark's place and
-    angle are the stamp's when most of its face was down; it is whole if all four corners were down at once, and
-    smeared by as far as the stamp slid over the page while touching. A mark is drawn on the page as that stamp's
-    framed word and moves with the book (the first two marks of each stamp are drawn; all count). An inked stamp
-    touching the desk pad or the counter is counted and reported, not drawn."""
+    """One disclosed rule: ink, from measured contact forces. PhysX reports the contact force between each stamp and
+    the invoice book, and between each stamp and the ink pad's felt (rigid contact views on the stamps).
+
+    A stamp is inked once it stands on the felt (upright within 15 degrees, whole face on it) pressed with at least
+    2 N; it stays inked. While an inked stamp's face touches the top page with a measured force of at least 0.2 N it
+    leaves one mark, until it is lifted 3 mm clear: one press, one mark. The mark is whole (a legible impression) only
+    if the die lay flat on the page (all four corners down) while the measured force was at least 5 N; a lighter or
+    tilted touch, the stamp's own weight included, leaves a faint or partial mark that still counts as a mark. A stamp
+    held just above the page prints nothing. A mark is drawn on the page as that stamp's framed word and moves with
+    the book (the first two marks of each stamp are drawn; all count)."""
 
     def __init__(self, env):
         import omni.usd
-        from pxr import UsdGeom
+        from pxr import UsdGeom, UsdPhysics
         self.rule = K.InkRule()
         stage = omni.usd.get_context().get_stage()
         found = {}
+        self.bodies = {}
         for prim in stage.Traverse():
             path = str(prim.GetPath())
             for k in range(len(K.MARK_VISUALS)):
                 if path.endswith(f"/sheet/visual{k + 1}"):
                     found[k] = prim
+            if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                leaf = path.rsplit("/", 1)[-1]
+                if leaf in ("sheet", "ink_felt", *K.STAMPS):
+                    self.bodies[leaf] = path
         if len(found) != len(K.MARK_VISUALS):
             raise RuntimeError(f"mark visuals not found on the stage: {sorted(found)}")
+        if len(self.bodies) != 2 + len(K.STAMPS):
+            raise RuntimeError(f"stamp, book or felt bodies not found on the stage: {sorted(self.bodies)}")
         self.slots = {}
         for k, prim in found.items():
             xf = UsdGeom.Xformable(prim)
@@ -88,6 +103,21 @@ class Dynamics:
             turn = xf.AddRotateZOp()
             self.slots[k] = (UsdGeom.Imageable(prim), move, turn)
         self.drawn = {}
+        self.views = None
+
+    def _forces(self):
+        """Measured contact force (N) of each stamp on the book and on the felt, from PhysX."""
+        if self.views is None:
+            from isaaclab_physx.physics.physx_manager import PhysxManager
+            psv = PhysxManager.get_physics_sim_view()
+            self.views = [psv.create_rigid_contact_view([self.bodies[n]], filter_patterns=[[self.bodies["sheet"], self.bodies["ink_felt"]]],
+                                                        max_contact_data_count=64) for n in K.STAMPS]
+        out = {"sheet": [], "felt": []}
+        for view in self.views:
+            f = _arr(view.get_contact_force_matrix(dt=1.0 / 240.0)).reshape(2, 3)
+            out["sheet"].append(float(np.linalg.norm(f[0])))
+            out["felt"].append(float(np.linalg.norm(f[1])))
+        return out
 
     def _draw(self):
         from pxr import Gf
@@ -113,7 +143,7 @@ class Dynamics:
         pass
 
     def after_step(self, step, objects, root_poses, robot):
-        out = self.rule.update(root_poses)
+        out = self.rule.update(root_poses, self._forces())
         self._draw()
         return out
 
@@ -140,6 +170,8 @@ GRIP_Z = 0.058                       # the hand holds the handle this far above 
 TIP = 0.013                          # the fingertips reach this far past the grasp point
 HOLD_XY = (0.370, 0.125)             # where the holding hand's closed fingertips rest: the invoice's left margin
 AIM = (0.003, 0.002)                 # the held stamp settles this far short of where the hand is sent; the hand aims that much further
+PRESS_PAST = 0.020                   # the arm gives about 0.35 N per mm, so the hand is sent this far past the page to press with about 7 N
+HOLD_PAST = 0.008                    # likewise the holding hand's fingertips, for about 3 N
 RACK_AIM = (0.002, 0.0005)           # likewise over the rack
 LIFT = 0.115                         # the stamp is carried to and from its pocket this high, clear of its neighbours' tops
 SHEET_TOP = K.TOP + K.PAD_SIZE[2] + K.SHEET[2]
@@ -157,14 +189,15 @@ def demo():
         (1.5, home + up * LIFT, "lift it out of the rack"),
         (2.5, ink + up * 0.070, "over the ink pad"),
         (1.5, ink, "press it on the pad"),
-        (0.6, ink, "dab"),
+        (0.8, ink, "dab"),
         (1.2, ink + up * 0.070, "lift"),
         (2.5, box + up * 0.060, "over the approval box"),
         (0.6, box + up * 0.060, "steady, square to the page"),
         (1.5, box + up * 0.008, "down to just above the paper"),
         (0.7, box + up * 0.008, "steady"),
-        (1.0, box, "press it in the box"),
-        (0.8, box, "press"),
+        (0.8, box, "set it down in the box"),
+        (1.5, box - up * PRESS_PAST, "lean on it"),
+        (1.0, box - up * PRESS_PAST, "press"),
         (1.5, box + up * 0.060, "lift straight off"),
         (3.0, back + up * LIFT, "back over its pocket"),
         (0.6, back + up * LIFT, "steady over the pocket"),
@@ -191,7 +224,7 @@ def demo():
         Waypoint(2.0, REST["right"], FINGER_OPEN, "stand clear", DOWN),
         Waypoint(3.0, REST["right"], FINGER_OPEN, "done", DOWN),
     ]
-    tip = np.array([HOLD_XY[0], HOLD_XY[1], SHEET_TOP - 0.001])
+    tip = np.array([HOLD_XY[0], HOLD_XY[1], SHEET_TOP - HOLD_PAST])
     hold = tip - AH * TIP
     left = [
         Waypoint(1.0, REST["left"], FINGER_CLOSED, "look", DOWN),
