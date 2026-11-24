@@ -1,8 +1,10 @@
-"""Geometry and measurements for starting a bench grinder beside a person whose ears are bare.
+"""Geometry and measurements for starting a thickness planer beside a person whose ears are bare.
 
-A 150 mm bench grinder stands at the back of the bench, guarded, with its start/stop push-button station at the front
-right. A full-size training bust (the operator) stands back from the grinder's right wheel, facing it, wearing safety
-glasses and nothing on its ears. A pair of over-the-head ear defenders stands on the bench in front of the robot.
+A 318 mm bench-top thickness planer stands at the back left of the bench, its infeed table folded down toward the
+operator with a board lying ready on it; its start/stop push-button station is at the front right. A full-size
+training bust (the operator) stands at the infeed end, offset to the right of the feed opening, facing the back of the
+bench, wearing safety glasses and nothing on its ears. A pair of over-the-head ear defenders stands on the bench in
+front of the robot.
 
 The ear defenders are two bodies, one per cup with its half of the headband, joined by a sliding joint across the head
 with a spring that pulls the cups together: that is the headband's clamping force.
@@ -23,7 +25,7 @@ TOP = 0.7475
 ASSETS = Path(__file__).resolve().parent / "assets"
 GREY = (0.6, 0.6, 0.6)
 
-# -- the bust: head and shoulders, facing +x (toward the grinder), free-standing --------------------------------------
+# -- the bust: head and shoulders, facing +x (toward the planer end of the bench), free-standing --------------------------------------
 BUST_C = (0.280, 0.000)
 BUST_Z = 0.0225                      # its body origin above the bench (the middle of the shoulder block)
 BUST_MASS = 4.0
@@ -70,11 +72,16 @@ BTN_SIZE = (0.022, 0.022, 0.008)
 BTN_Z = 0.073                        # a cap's middle above the bench at rest
 BTN_TRAVEL, BTN_K, BTN_ON = 0.004, 1000.0, 0.0025
 
-# -- grinder and sign (fixed) ----------------------------------------------------------------------------------------
-GRINDER_C = (0.800, 0.040)
-SIGN_C = (0.460, 0.300)
-POT_C = (0.740, -0.190)
-STRIP_C = (0.700, -0.360)
+# -- planer, board, sign, power strip (fixed) -------------------------------------------------------------------------
+PLANER_C = (0.740, 0.330)            # middle of the planer's body
+PLANER = (0.340, 0.560, 0.430)       # its body: along the feed (x), across it (y), height
+FEED_W = 0.318                       # width of the feed opening (the planing width)
+BED_Z = 0.095                        # the planer bed and the folding tables' tops above the bench
+TABLE_LEN = 0.200                    # each folding table reaches this far out from the body
+BOARD = (0.280, 0.140, 0.045)        # the board lying ready: along the feed, across it, thickness
+BOARD_C = (0.440, 0.330)             # its middle; its leading end is 10 mm inside the feed opening
+SIGN_C = (0.600, -0.160)
+STRIP_C = (0.740, -0.060)
 
 
 def _vis(names, offset, **kw):
@@ -89,21 +96,24 @@ def _box(x, y, z, origin, color=GREY):
 
 
 def shop_object() -> Part:
-    """Everything fixed: grinder, tool rests, start/stop station box, sign on its stand, quench pot, power strip. Colliders
-    (hidden): boxes and one cylinder."""
-    c = (GRINDER_C[0], GRINDER_C[1], 0.120)
+    """Everything fixed: planer with its folding tables and the board on the infeed table, start/stop station box,
+    sign on its stand, power strip. Colliders (hidden): boxes."""
+    c = (PLANER_C[0], PLANER_C[1], PLANER[2] / 2)
     sx, sy = STATION_C
+    x0, x1 = PLANER_C[0] - PLANER[0] / 2, PLANER_C[0] + PLANER[0] / 2
+    half = FEED_W / 2 + 0.006
     pieces = [
-        _box((c[0] - 0.118, c[0] - 0.090), (c[1] - 0.165, c[1] + 0.165), (0.100, 0.145), c),
-        _box((c[0] - 0.080, c[0] + 0.080), (c[1] - 0.100, c[1] + 0.100), (0.0, 0.025), c),
+        _box((x0 - TABLE_LEN, x0), (c[1] - half, c[1] + half), (BED_Z - 0.012, BED_Z), c),
+        _box((x1, x1 + TABLE_LEN), (c[1] - half, c[1] + half), (BED_Z - 0.012, BED_Z), c),
+        _box((BOARD_C[0] - BOARD[0] / 2, BOARD_C[0] + BOARD[0] / 2), (BOARD_C[1] - BOARD[1] / 2, BOARD_C[1] + BOARD[1] / 2),
+             (BED_Z, BED_Z + BOARD[2]), c),
         _box((sx - STATION[0] / 2, sx + STATION[0] / 2), (sy - STATION[1] / 2, sy + STATION[1] / 2), (0.0, STATION[2]), c),
         _box((SIGN_C[0] - 0.003, SIGN_C[0] + 0.003), (SIGN_C[1] - 0.075, SIGN_C[1] + 0.075), (0.100, 0.300), c),
         _box((SIGN_C[0] - 0.045, SIGN_C[0] + 0.045), (SIGN_C[1] - 0.060, SIGN_C[1] + 0.060), (0.0, 0.006), c),
         _box((SIGN_C[0] - 0.006, SIGN_C[0] + 0.006), (SIGN_C[1] - 0.006, SIGN_C[1] + 0.006), (0.006, 0.100), c),
-        Piece("cylinder", (0.038, 0.050, 0.038), (POT_C[0] - c[0], POT_C[1] - c[1], 0.028 - c[2]), color=GREY),
         _box((STRIP_C[0] - 0.030, STRIP_C[0] + 0.030), (STRIP_C[1] - 0.080, STRIP_C[1] + 0.080), (0.0, 0.032), c),
     ]
-    return Part("shop", pos=(c[0], c[1], TOP + c[2]), size=(0.180, 0.340, 0.240), exact_z=True, color=GREY,
+    return Part("shop", pos=(c[0], c[1], TOP + c[2]), size=PLANER, exact_z=True, color=GREY,
                 friction=(0.6, 0.5), pieces=tuple(pieces), **_vis("shop_set", (-c[0], -c[1], -c[2]), visual_glass_opacity=0.35))
 
 
@@ -245,14 +255,15 @@ def ears_covered(bust, left, right):
 
 
 def band_point(left, right):
-    """The middle of the underside of the headband's crown pad (world)."""
+    """The band's middle at its crown pad's underside (world): the point midway between the two cups' middles, BAND_Z
+    above them."""
     l = points(left, [(0.0, 0.0, BAND_Z)])[0]
     r = points(right, [(0.0, 0.0, BAND_Z)])[0]
     return (l + r) / 2
 
 
 def band_over_crown(bust, left, right) -> bool:
-    """The headband passes over the top of the head: the middle of its crown pad's underside within 35 mm fore, aft and
+    """The headband passes over the top of the head: the band's middle at its crown pad's underside within 35 mm fore, aft and
     sideways of the point above the ear line, and 0 to 30 mm above the crown."""
     p = in_frame(bust, [band_point(left, right)])[0]
     z = p[2] + BUST_Z
